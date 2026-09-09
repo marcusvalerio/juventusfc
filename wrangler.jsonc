@@ -20,7 +20,7 @@
       "database_name": "juventusfc",
       // Replace with the id printed by `wrangler d1 create juventusfc`.
       // Local development ignores this value and uses a local SQLite file.
-      "database_id": "REPLACE_WITH_REAL_D1_ID",
+      "database_id": "8089c853-9b9c-40a9-a86c-132b60c31961",
       "migrations_dir": "migrations"
     }
   ],
@@ -41,7 +41,7 @@
         {
           "binding": "DB",
           "database_name": "juventusfc",
-          "database_id": "REPLACE_WITH_REAL_D1_ID",
+          "database_id": "8089c853-9b9c-40a9-a86c-132b60c31961",
           "migrations_dir": "migrations"
         }
       ]
