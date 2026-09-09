@@ -12,23 +12,24 @@ import { DatePicker, Field, Input, Select, Textarea } from '@/components/ui/Fiel
 import { Skeleton } from '@/components/ui/States';
 import { riseItem, staggerContainer } from '@/lib/motion';
 import { useAsync } from '@/hooks/useAsync';
+import { useToast } from '@/components/ui/Toast';
+import { runSubmit } from '@/lib/submit';
 import { useDisclosure } from '@/hooks/useDisclosure';
 import { useTableState } from '@/hooks/useTableState';
-import { trainingsRepo } from '@/services';
-import { staffName, upcomingTrainings } from '@/services/analytics';
-import { staffMembers } from '@/data/squad';
+import { staffRepo, trainingsRepo } from '@/services';
+import { upcomingFrom } from '@/services/analytics';
+import { useSession } from '@/app/SessionContext';
 import { formatDate, formatDateShort, weekdayOf } from '@/lib/dates';
-import type { SquadTeam, Training, TrainingType } from '@/types/domain';
+import type { Training, TrainingType } from '@/types/domain';
 
 const TYPES: TrainingType[] = ['Técnico', 'Tático', 'Físico', 'Recreativo', 'Coletivo'];
-const TEAMS: SquadTeam[] = ['Profissional', 'Sub-20', 'Sub-17', 'Veteranos'];
 const STATUSES = ['agendado', 'realizado', 'cancelado'];
 
 const emptyForm = {
   date: '',
   time: '19:30',
-  location: 'CT Rua Javari — Campo 1',
-  team: TEAMS[0] as string,
+  location: '',
+  teamId: '',
   responsibleId: '',
   type: TYPES[0] as string,
   status: 'agendado',
@@ -36,8 +37,11 @@ const emptyForm = {
 };
 
 export default function TrainingsPage() {
+  const { teams } = useSession();
   const { data, status, reload } = useAsync(() => trainingsRepo.list(), []);
+  const staff = useAsync(() => staffRepo.list(), []);
   const form = useDisclosure();
+  const toast = useToast();
   const [values, setValues] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -46,7 +50,7 @@ export default function TrainingsPage() {
     initialSort: { key: 'date', direction: 'desc' },
   });
 
-  const next = upcomingTrainings(3);
+  const next = upcomingFrom(data ?? [], ['cancelado', 'realizado'], 3);
 
   const columns: Column<Training>[] = [
     {
@@ -71,18 +75,36 @@ export default function TrainingsPage() {
     },
     { key: 'team', header: 'Equipe', sortable: true, render: (training) => training.team },
     { key: 'location', header: 'Local', secondary: true, render: (training) => training.location },
-    { key: 'responsibleId', header: 'Responsável', secondary: true, render: (training) => staffName(training.responsibleId) },
+    { key: 'responsibleId', header: 'Responsável', secondary: true, render: (training) => training.responsibleName ?? '—' },
     { key: 'status', header: 'Status', align: 'right', render: (training) => <StatusBadge status={training.status} /> },
   ];
 
-  const submit = () => {
+  const submit = async () => {
     const nextErrors: Record<string, string> = {};
     if (!values.date) nextErrors.date = 'Informe a data do treino.';
     if (!values.location.trim()) nextErrors.location = 'Informe o local.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return false;
-    setValues(emptyForm);
-    return true;
+
+    const ok = await runSubmit(
+      async () => {
+        await trainingsRepo.create({
+          date: values.date,
+          time: values.time,
+          location: values.location,
+          teamId: values.teamId || null,
+          responsibleId: values.responsibleId || null,
+          type: values.type,
+          status: values.status,
+          notes: values.notes,
+        });
+        reload();
+      },
+      setErrors,
+      toast,
+    );
+    if (ok) setValues(emptyForm);
+    return ok;
   };
 
   return (
@@ -153,7 +175,7 @@ export default function TrainingsPage() {
             onSearch={table.setSearch}
             searchPlaceholder="Buscar treino…"
             filters={[
-              { key: 'team', label: 'Equipe', options: TEAMS.map((team) => ({ value: team, label: team })) },
+              { key: 'team', label: 'Equipe', options: teams.map((team) => ({ value: team.name, label: team.name })) },
               { key: 'type', label: 'Tipo', options: TYPES.map((type) => ({ value: type, label: type })) },
               { key: 'status', label: 'Status', options: STATUSES.map((value) => ({ value, label: value })) },
             ]}
@@ -204,9 +226,10 @@ export default function TrainingsPage() {
             {({ id }) => (
               <Select
                 id={id}
-                value={values.team}
-                onChange={(e) => setValues({ ...values, team: e.target.value })}
-                options={TEAMS.map((team) => ({ value: team, label: team }))}
+                value={values.teamId}
+                placeholder="Selecione a categoria"
+                onChange={(e) => setValues({ ...values, teamId: e.target.value })}
+                options={teams.map((team) => ({ value: team.id, label: team.name }))}
               />
             )}
           </Field>
@@ -227,7 +250,7 @@ export default function TrainingsPage() {
                 value={values.responsibleId}
                 placeholder="Selecione o profissional"
                 onChange={(e) => setValues({ ...values, responsibleId: e.target.value })}
-                options={staffMembers.map((member) => ({ value: member.id, label: `${member.name} · ${member.role}` }))}
+                options={(staff.data ?? []).map((member) => ({ value: member.id, label: `${member.name} · ${member.role}` }))}
               />
             )}
           </Field>

@@ -29,7 +29,13 @@ export function Field({ label, hint, error, success, required, className, childr
       {label && (
         <label htmlFor={id} className="flex items-center gap-1 text-[13px] font-medium text-ink-muted">
           {label}
-          {required && <span className="text-gold">*</span>}
+          {/* Hidden from the accessible name: the control's own `required`
+              attribute conveys this, so the label stays exactly the field name. */}
+          {required && (
+            <span className="text-gold" aria-hidden="true">
+              *
+            </span>
+          )}
         </label>
       )}
       {children({ id, invalid })}

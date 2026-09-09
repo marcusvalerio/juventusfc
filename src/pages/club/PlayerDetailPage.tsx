@@ -7,7 +7,7 @@ import { Stagger, StaggerItem } from '@/components/motion/Reveal';
 import { DetailList } from '@/components/data/DetailList';
 import { DataTable, type Column } from '@/components/data/DataTable';
 import { Badge, StatusBadge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button, LinkButton } from '@/components/ui/Button';
 import { ShirtNumber } from '@/components/ui/Avatar';
 import { Tabs } from '@/components/ui/Tabs';
 import { EmptyState, LoadingState } from '@/components/ui/States';
@@ -118,9 +118,9 @@ export default function PlayerDetailPage() {
           </div>
         </div>
 
-        <Button variant="secondary" icon={<Pencil />}>
-          Editar jogador
-        </Button>
+        <LinkButton to="/app/jogadores" variant="secondary" icon={<Pencil />}>
+          Editar no elenco
+        </LinkButton>
       </motion.header>
 
       <Stagger className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">

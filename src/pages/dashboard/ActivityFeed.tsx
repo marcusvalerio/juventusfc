@@ -3,9 +3,9 @@ import { Boxes, CircleDollarSign, Settings, Swords, UserCog } from 'lucide-react
 import { relativeTime } from '@/lib/dates';
 import { riseItem, staggerContainer } from '@/lib/motion';
 import { Skeleton } from '@/components/ui/States';
-import type { ActivityKind, ActivityRecord } from '@/types/domain';
+import type { ActivityRecord } from '@/services/analytics';
 
-const ICONS: Record<ActivityKind, React.ReactNode> = {
+const ICONS: Record<string, React.ReactNode> = {
   financeiro: <CircleDollarSign />,
   elenco: <UserCog />,
   futebol: <Swords />,
@@ -43,7 +43,7 @@ export function ActivityFeed({ records, loading }: { records: ActivityRecord[]; 
       {records.map((record) => (
         <motion.li key={record.id} variants={riseItem} className="relative flex gap-3 pb-5 last:pb-0">
           <span className="relative z-10 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-line bg-graphite text-ink-faint [&_svg]:h-3 [&_svg]:w-3">
-            {ICONS[record.kind]}
+            {ICONS[record.kind] ?? ICONS.sistema}
           </span>
           <span className="min-w-0 flex-1">
             <span className="flex items-baseline justify-between gap-3">

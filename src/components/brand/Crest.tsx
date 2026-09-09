@@ -5,7 +5,7 @@ import { cn } from '@/lib/cn';
  * monogram cut out of the centre. Drawn as vector so it stays crisp at any size
  * and can later sit beside the real crest asset without a redesign.
  */
-export function Crest({ className, title = 'Juventus F.C.' }: { className?: string; title?: string }) {
+export function Crest({ className, title = 'Escudo do clube' }: { className?: string; title?: string }) {
   return (
     <svg viewBox="0 0 32 36" className={cn('h-7 w-auto', className)} role="img" aria-label={title}>
       <defs>

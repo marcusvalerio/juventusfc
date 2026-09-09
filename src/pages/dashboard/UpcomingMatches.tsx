@@ -4,7 +4,6 @@ import { ArrowUpRight, MapPin } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { formatDateShort, daysBetween, TODAY_ISO } from '@/lib/dates';
 import { riseItem, staggerContainer } from '@/lib/motion';
-import { competitionName } from '@/services/analytics';
 import { Badge } from '@/components/ui/Badge';
 import { EmptyState, Skeleton } from '@/components/ui/States';
 import type { Match } from '@/types/domain';
@@ -66,7 +65,7 @@ export function UpcomingMatches({ matches, loading }: { matches: Match[]; loadin
               </span>
               <span className="mt-1 flex items-center gap-1.5 truncate text-2xs text-ink-faint">
                 <MapPin className="h-3 w-3 shrink-0" aria-hidden />
-                {match.location} · {competitionName(match.competitionId)}
+                {[match.location, match.competitionName].filter(Boolean).join(' · ')}
               </span>
             </span>
 

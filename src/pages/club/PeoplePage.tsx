@@ -12,6 +12,8 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Drawer } from '@/components/ui/Drawer';
 import { Field, Input, Select, Textarea, DatePicker } from '@/components/ui/Field';
 import { useAsync } from '@/hooks/useAsync';
+import { useToast } from '@/components/ui/Toast';
+import { runSubmit } from '@/lib/submit';
 import { useDisclosure } from '@/hooks/useDisclosure';
 import { useTableState } from '@/hooks/useTableState';
 import { peopleRepo } from '@/services';
@@ -32,8 +34,35 @@ export default function PeoplePage() {
   const { data, status, reload } = useAsync(() => peopleRepo.list(), []);
   const [selected, setSelected] = useState<Person | null>(null);
   const form = useDisclosure();
+  const toast = useToast();
   const [values, setValues] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const openCreate = () => {
+    setEditingId(null);
+    setValues(emptyForm);
+    setErrors({});
+    form.open();
+  };
+
+  const openEdit = (person: Person) => {
+    setEditingId(person.id);
+    setValues({
+      fullName: person.fullName,
+      nickname: person.nickname ?? '',
+      birthDate: person.birthDate ?? '',
+      phone: person.phone ?? '',
+      email: person.email ?? '',
+      document: person.document ?? '',
+      city: person.city ?? '',
+      role: person.roles[0] ?? 'jogador',
+      notes: person.notes ?? '',
+    });
+    setErrors({});
+    setSelected(null);
+    form.open();
+  };
 
   const table = useTableState<Person>(data, ['fullName', 'nickname', 'email', 'phone', 'city'], {
     pageSize: 10,
@@ -80,14 +109,39 @@ export default function PeoplePage() {
     { key: 'status', header: 'Status', align: 'right', render: (person) => <StatusBadge status={person.status} /> },
   ];
 
-  const submit = () => {
+  const submit = async () => {
     const nextErrors: Record<string, string> = {};
     if (!values.fullName.trim()) nextErrors.fullName = 'Informe o nome completo.';
     if (values.email && !values.email.includes('@')) nextErrors.email = 'E-mail inválido.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return false;
-    setValues(emptyForm);
-    return true;
+
+    const payload = {
+      fullName: values.fullName,
+      nickname: values.nickname,
+      birthDate: values.birthDate,
+      phone: values.phone,
+      email: values.email,
+      document: values.document,
+      city: values.city,
+      notes: values.notes,
+      status: 'ativo',
+    };
+
+    const ok = await runSubmit(
+      async () => {
+        if (editingId) await peopleRepo.update(editingId, payload);
+        else await peopleRepo.create(payload);
+        reload();
+      },
+      setErrors,
+      toast,
+    );
+    if (ok) {
+      setValues(emptyForm);
+      setEditingId(null);
+    }
+    return ok;
   };
 
   return (
@@ -97,7 +151,7 @@ export default function PeoplePage() {
         title="Pessoas"
         description="Cadastro central do clube. Cada pessoa existe uma única vez e recebe vínculos — jogador, diretoria, comissão — sem duplicar registros."
         actions={
-          <Button variant="primary" icon={<Plus />} onClick={form.open}>
+          <Button variant="primary" icon={<Plus />} onClick={openCreate}>
             Nova pessoa
           </Button>
         }
@@ -144,7 +198,7 @@ export default function PeoplePage() {
           title: 'Nenhuma pessoa encontrada',
           description: 'Ajuste a busca ou cadastre uma nova pessoa no clube.',
           action: (
-            <Button size="sm" icon={<Plus />} onClick={form.open}>
+            <Button size="sm" icon={<Plus />} onClick={openCreate}>
               Nova pessoa
             </Button>
           ),
@@ -161,7 +215,9 @@ export default function PeoplePage() {
             <Button variant="ghost" onClick={() => setSelected(null)}>
               Fechar
             </Button>
-            <Button variant="secondary">Editar cadastro</Button>
+            <Button variant="secondary" onClick={() => selected && openEdit(selected)}>
+              Editar cadastro
+            </Button>
           </>
         }
       >
@@ -220,9 +276,9 @@ export default function PeoplePage() {
       <FormModal
         open={form.isOpen}
         onClose={form.close}
-        title="Nova pessoa"
+        title={editingId ? 'Editar pessoa' : 'Nova pessoa'}
         description="O cadastro central alimenta jogadores, diretoria e comissão técnica."
-        successMessage="Pessoa cadastrada"
+        successMessage={editingId ? 'Cadastro atualizado' : 'Pessoa cadastrada'}
         onSubmit={submit}
       >
         <FormSection title="Identificação">

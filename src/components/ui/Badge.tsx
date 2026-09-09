@@ -23,7 +23,10 @@ export function Badge({ tone = 'neutral', dot, children, className }: BadgeProps
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-2xs font-medium leading-5 transition-colors duration-150',
+        // `whitespace-nowrap` + `shrink-0` keep short labels such as "Casa" and
+        // "Fora" on one line inside narrow flex rows on mobile.
+        'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-2 py-0.5',
+        'text-2xs font-medium leading-5 transition-colors duration-150',
         TONES[tone],
         className,
       )}

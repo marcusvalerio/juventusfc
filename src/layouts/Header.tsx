@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bell, ChevronRight, Command, Menu, Search } from 'lucide-react';
+import { Bell, ChevronRight, Command, LogOut, Menu, Search, Settings } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { DUR, EASE } from '@/lib/motion';
 import { findNavItem } from '@/app/navigation';
-import { viewer } from '@/data/club';
+import { useSession } from '@/app/SessionContext';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { IconButton } from '@/components/ui/Button';
 import { Dropdown, DropdownItem, DropdownLabel, DropdownSeparator } from '@/components/ui/Dropdown';
 import { relativeTime } from '@/lib/dates';
-import { activityRecords } from '@/data/activity';
+import { useAsync } from '@/hooks/useAsync';
+import { getDashboardOverview } from '@/services/analytics';
+import { useToast } from '@/components/ui/Toast';
 
 interface HeaderProps {
   onOpenMobileNav: () => void;
@@ -22,8 +24,17 @@ interface HeaderProps {
 export function Header({ onOpenMobileNav, onOpenSearch, collapsed }: HeaderProps) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const { account, club, logout, can } = useSession();
+  const toast = useToast();
   const current = findNavItem(pathname);
   const [scrolled, setScrolled] = useState(false);
+
+  // The bell mirrors the dashboard feed, so it reads the same real rows.
+  const activity = useAsync(
+    async () => (can('dashboard.view') ? (await getDashboardOverview()).activity : []),
+    [can],
+  );
+  const records = activity.data ?? [];
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 4);
@@ -96,14 +107,21 @@ export function Header({ onOpenMobileNav, onOpenSearch, collapsed }: HeaderProps
             className="relative flex h-9 w-9 items-center justify-center rounded-md text-ink-muted transition-colors duration-150 hover:bg-surface-raised hover:text-ink"
           >
             <Bell className="h-4 w-4" />
-            <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-gold" aria-hidden />
+            {records.length > 0 && (
+              <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-gold" aria-hidden />
+            )}
           </button>
         )}
       >
         {({ close }) => (
           <>
             <DropdownLabel>Atividade recente</DropdownLabel>
-            {activityRecords.slice(0, 4).map((record) => (
+            {records.length === 0 && (
+              <p className="px-2.5 py-6 text-center text-2xs text-ink-faint">
+                {activity.status === 'loading' ? 'Carregando…' : 'Nenhuma atividade registrada.'}
+              </p>
+            )}
+            {records.slice(0, 4).map((record) => (
               <button
                 key={record.id}
                 type="button"
@@ -123,9 +141,11 @@ export function Header({ onOpenMobileNav, onOpenSearch, collapsed }: HeaderProps
 
       <span className="mx-1 hidden h-5 w-px bg-line sm:block" aria-hidden />
 
-      <Badge tone="gold" className="hidden lg:inline-flex">
-        Demonstração
-      </Badge>
+      {club && (
+        <Badge tone="muted" className="hidden max-w-[180px] truncate lg:inline-flex">
+          {club.shortName}
+        </Badge>
+      )}
 
       <Dropdown
         trigger={({ toggle }) => (
@@ -135,39 +155,48 @@ export function Header({ onOpenMobileNav, onOpenSearch, collapsed }: HeaderProps
             className="flex items-center gap-2.5 rounded-md py-1 pl-1 pr-2 transition-colors duration-150 hover:bg-surface-raised"
             aria-label="Conta"
           >
-            <Avatar name={viewer.name} size="sm" tone="gold" />
+            <Avatar name={account?.displayName ?? '?'} size="sm" tone="gold" />
             <span className="hidden text-left leading-tight sm:block">
-              <span className="block text-[13px] text-ink">{viewer.name}</span>
-              <span className="block text-2xs text-ink-faint">{viewer.role}</span>
+              <span className="block max-w-[160px] truncate text-[13px] text-ink">
+                {account?.displayName}
+              </span>
+              <span className="block text-2xs text-ink-faint">
+                {account?.isOwner ? 'Administração' : `@${account?.username}`}
+              </span>
             </span>
           </button>
         )}
       >
         {({ close }) => (
           <>
-            <DropdownLabel>Sessão de demonstração</DropdownLabel>
+            <DropdownLabel>Conta</DropdownLabel>
             <div className="px-2.5 pb-2 pt-1">
-              <p className="text-[13px] text-ink">{viewer.name}</p>
-              <p className="text-2xs text-ink-faint">
-                Autenticação será habilitada na próxima etapa.
-              </p>
+              <p className="truncate text-[13px] text-ink">{account?.displayName}</p>
+              <p className="text-2xs text-ink-faint">@{account?.username}</p>
             </div>
             <DropdownSeparator />
+            {can('settings.view') && (
+              <DropdownItem
+                icon={<Settings />}
+                onClick={() => {
+                  close();
+                  navigate('/app/configuracoes');
+                }}
+              >
+                Configurações do clube
+              </DropdownItem>
+            )}
             <DropdownItem
-              onClick={() => {
+              icon={<LogOut />}
+              tone="danger"
+              onClick={async () => {
                 close();
-                navigate('/app/configuracoes');
+                await logout();
+                toast.success('Sessão encerrada');
+                navigate('/entrar', { replace: true });
               }}
             >
-              Configurações do clube
-            </DropdownItem>
-            <DropdownItem
-              onClick={() => {
-                close();
-                navigate('/');
-              }}
-            >
-              Voltar ao portal
+              Sair
             </DropdownItem>
           </>
         )}

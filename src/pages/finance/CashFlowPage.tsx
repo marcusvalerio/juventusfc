@@ -15,7 +15,7 @@ import { Button } from '@/components/ui/Button';
 import { SegmentedControl } from '@/components/ui/Tabs';
 import { useToast } from '@/components/ui/Toast';
 import { useAsync } from '@/hooks/useAsync';
-import { getCashFlow, getExpenseBreakdown } from '@/services/analytics';
+import { getCashFlow } from '@/services/analytics';
 import { expenseRepo, incomeRepo } from '@/services';
 import { currency } from '@/lib/format';
 import { formatDateShort, formatMonthRef } from '@/lib/dates';
@@ -43,7 +43,6 @@ export default function CashFlowPage() {
   const months = Number(period);
 
   const cashFlow = useAsync(() => getCashFlow(months), [months]);
-  const breakdown = useAsync(() => getExpenseBreakdown(3), []);
   const movements = useAsync(async () => {
     const [income, expenses] = await Promise.all([incomeRepo.list(), expenseRepo.list()]);
     const rows: Movement[] = [
@@ -69,7 +68,8 @@ export default function CashFlowPage() {
     return rows.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 24);
   }, []);
 
-  const points = cashFlow.data ?? [];
+  const points = cashFlow.data?.points ?? [];
+  const breakdown = cashFlow.data?.breakdown ?? [];
   const latest = points[points.length - 1];
   const previous = points[points.length - 2];
 
@@ -213,10 +213,10 @@ export default function CashFlowPage() {
         <ChartCard
           title="Onde o dinheiro sai"
           description="Categorias de despesa nos últimos três meses"
-          loading={breakdown.status === 'loading'}
+          loading={cashFlow.status === 'loading'}
           height={168}
         >
-          <DonutChart data={breakdown.data ?? []} formatValue={currency} />
+          <DonutChart data={breakdown} formatValue={currency} />
         </ChartCard>
 
         <motion.section

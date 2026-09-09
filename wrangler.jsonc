@@ -1,0 +1,53 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "juventusfc",
+  "main": "worker/src/index.ts",
+  "compatibility_date": "2025-04-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+
+  // The built SPA is served by the Worker; unknown paths fall back to index.html
+  // so client-side routing keeps working on deep links.
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+    "binding": "ASSETS"
+  },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "juventusfc",
+      // Replace with the id printed by `wrangler d1 create juventusfc`.
+      // Local development ignores this value and uses a local SQLite file.
+      "database_id": "REPLACE_WITH_REAL_D1_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "vars": {
+    "ENVIRONMENT": "development"
+  },
+
+  "env": {
+    "production": {
+      "vars": { "ENVIRONMENT": "production" },
+      "assets": {
+        "directory": "./dist",
+        "not_found_handling": "single-page-application",
+        "binding": "ASSETS"
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "juventusfc",
+          "database_id": "REPLACE_WITH_REAL_D1_ID",
+          "migrations_dir": "migrations"
+        }
+      ]
+    }
+  }
+
+  // R2 for crests/documents — enable when file upload lands:
+  // "r2_buckets": [{ "binding": "FILES", "bucket_name": "juventusfc-files" }]
+}

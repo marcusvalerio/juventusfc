@@ -24,6 +24,8 @@ export interface NavItem {
   icon: LucideIcon;
   /** Section title shown in the page header and breadcrumb. */
   area: string;
+  /** Capability required to see and open the section. */
+  permission: string;
 }
 
 export interface NavSection {
@@ -35,45 +37,45 @@ export interface NavSection {
 export const navigation: NavSection[] = [
   {
     title: 'Início',
-    items: [{ label: 'Dashboard', to: '/app', icon: LayoutDashboard, area: 'Início' }],
+    items: [{ label: 'Dashboard', to: '/app', icon: LayoutDashboard, area: 'Início', permission: 'dashboard.view' }],
   },
   {
     title: 'Clube',
     items: [
-      { label: 'Pessoas', to: '/app/pessoas', icon: Users, area: 'Clube' },
-      { label: 'Diretoria', to: '/app/diretoria', icon: Shield, area: 'Clube' },
-      { label: 'Jogadores', to: '/app/jogadores', icon: UserCog, area: 'Clube' },
-      { label: 'Comissão Técnica', to: '/app/comissao-tecnica', icon: ClipboardList, area: 'Clube' },
+      { label: 'Pessoas', to: '/app/pessoas', icon: Users, area: 'Clube', permission: 'people.view' },
+      { label: 'Diretoria', to: '/app/diretoria', icon: Shield, area: 'Clube', permission: 'squad.view' },
+      { label: 'Jogadores', to: '/app/jogadores', icon: UserCog, area: 'Clube', permission: 'squad.view' },
+      { label: 'Comissão Técnica', to: '/app/comissao-tecnica', icon: ClipboardList, area: 'Clube', permission: 'squad.view' },
     ],
   },
   {
     title: 'Futebol',
     items: [
-      { label: 'Calendário', to: '/app/calendario', icon: CalendarDays, area: 'Futebol' },
-      { label: 'Jogos', to: '/app/jogos', icon: Swords, area: 'Futebol' },
-      { label: 'Campeonatos', to: '/app/campeonatos', icon: Trophy, area: 'Futebol' },
-      { label: 'Treinamentos', to: '/app/treinamentos', icon: Dumbbell, area: 'Futebol' },
-      { label: 'Escalações', to: '/app/escalacoes', icon: ClipboardList, area: 'Futebol' },
+      { label: 'Calendário', to: '/app/calendario', icon: CalendarDays, area: 'Futebol', permission: 'football.view' },
+      { label: 'Jogos', to: '/app/jogos', icon: Swords, area: 'Futebol', permission: 'football.view' },
+      { label: 'Campeonatos', to: '/app/campeonatos', icon: Trophy, area: 'Futebol', permission: 'football.view' },
+      { label: 'Treinamentos', to: '/app/treinamentos', icon: Dumbbell, area: 'Futebol', permission: 'football.view' },
+      { label: 'Escalações', to: '/app/escalacoes', icon: ClipboardList, area: 'Futebol', permission: 'football.view' },
     ],
   },
   {
     title: 'Financeiro',
     items: [
-      { label: 'Mensalidades', to: '/app/mensalidades', icon: Receipt, area: 'Financeiro' },
-      { label: 'Entradas', to: '/app/entradas', icon: ArrowDownLeft, area: 'Financeiro' },
-      { label: 'Saídas', to: '/app/saidas', icon: ArrowUpRight, area: 'Financeiro' },
-      { label: 'Fluxo de Caixa', to: '/app/fluxo-de-caixa', icon: Wallet, area: 'Financeiro' },
+      { label: 'Mensalidades', to: '/app/mensalidades', icon: Receipt, area: 'Financeiro', permission: 'finance.view' },
+      { label: 'Entradas', to: '/app/entradas', icon: ArrowDownLeft, area: 'Financeiro', permission: 'finance.view' },
+      { label: 'Saídas', to: '/app/saidas', icon: ArrowUpRight, area: 'Financeiro', permission: 'finance.view' },
+      { label: 'Fluxo de Caixa', to: '/app/fluxo-de-caixa', icon: Wallet, area: 'Financeiro', permission: 'finance.view' },
     ],
   },
   {
     title: 'Patrimônio',
-    items: [{ label: 'Estoque', to: '/app/estoque', icon: Boxes, area: 'Patrimônio' }],
+    items: [{ label: 'Estoque', to: '/app/estoque', icon: Boxes, area: 'Patrimônio', permission: 'inventory.view' }],
   },
   {
     title: 'Gestão',
     items: [
-      { label: 'Relatórios', to: '/app/relatorios', icon: FileBarChart, area: 'Gestão' },
-      { label: 'Configurações', to: '/app/configuracoes', icon: Settings, area: 'Gestão' },
+      { label: 'Relatórios', to: '/app/relatorios', icon: FileBarChart, area: 'Gestão', permission: 'reports.view' },
+      { label: 'Configurações', to: '/app/configuracoes', icon: Settings, area: 'Gestão', permission: 'settings.view' },
     ],
   },
 ];

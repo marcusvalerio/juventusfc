@@ -6,7 +6,7 @@ import { DUR, EASE, springSoft } from '@/lib/motion';
 import { findNavItem, navigation } from '@/app/navigation';
 import { Wordmark } from '@/components/brand/Wordmark';
 import { IconButton } from '@/components/ui/Button';
-import { clubProfile } from '@/data/club';
+import { useSession } from '@/app/SessionContext';
 
 interface SidebarProps {
   collapsed: boolean;
@@ -17,12 +17,18 @@ interface SidebarProps {
 
 function NavItems({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const { pathname } = useLocation();
+  const { can } = useSession();
   // Longest matching route wins, so /app/jogadores never lights up Dashboard too.
   const currentPath = findNavItem(pathname)?.to;
 
+  // Sections the account cannot open are not shown; the API enforces the same rule.
+  const sections = navigation
+    .map((section) => ({ ...section, items: section.items.filter((item) => can(item.permission)) }))
+    .filter((section) => section.items.length > 0);
+
   return (
     <nav className="flex flex-1 flex-col gap-6 overflow-y-auto px-3 py-5" aria-label="Navegação principal">
-      {navigation.map((section) => (
+      {sections.map((section) => (
         <div key={section.title}>
           <AnimatePresence initial={false}>
             {!collapsed && (
@@ -83,13 +89,13 @@ function NavItems({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: 
 }
 
 function SidebarFooter({ collapsed }: { collapsed: boolean }) {
+  const { club, settings } = useSession();
   if (collapsed) return null;
   return (
     <div className="border-t border-line px-5 py-4">
-      <p className="text-2xs text-ink-ghost">
-        {clubProfile.shortName} · Temporada {new Date().getFullYear()}
+      <p className="truncate text-2xs text-ink-ghost">
+        {club?.shortName ?? 'Clube'} · Temporada {settings?.season || new Date().getFullYear()}
       </p>
-      <p className="mt-0.5 text-2xs text-ink-ghost">Versão de demonstração</p>
     </div>
   );
 }
@@ -105,12 +111,12 @@ export function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onCloseMobile
       >
         <div className={cn('flex h-16 shrink-0 items-center border-b border-line', collapsed ? 'justify-center px-0' : 'justify-between px-5')}>
           {collapsed ? (
-            <NavLink to="/" aria-label="Juventus F.C.">
+            <NavLink to="/app" aria-label="Início">
               <Wordmark size="sm" withCrest className="[&>span:last-child]:hidden" />
             </NavLink>
           ) : (
             <>
-              <NavLink to="/" aria-label="Juventus F.C.">
+              <NavLink to="/app" aria-label="Início">
                 <Wordmark size="sm" />
               </NavLink>
               <IconButton label="Recolher menu" onClick={onToggleCollapse} className="-mr-2 h-7 w-7">

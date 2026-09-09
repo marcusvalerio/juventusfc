@@ -5,12 +5,13 @@ import { PageTransition } from '@/components/motion/PageTransition';
 import { PageHeader } from '@/layouts/PageHeader';
 import { Badge, StatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { Tooltip } from '@/components/ui/Tooltip';
 import { EmptyState, LoadingState } from '@/components/ui/States';
 import { cn } from '@/lib/cn';
 import { EASE, riseItem, staggerContainer } from '@/lib/motion';
 import { useAsync } from '@/hooks/useAsync';
 import { lineupsRepo, matchesRepo } from '@/services';
-import { competitionName, matchLabel, playerById, staffName } from '@/services/analytics';
+import { matchLabel } from '@/services/analytics';
 import { formatDateLong, formatDateShort } from '@/lib/dates';
 import type { Lineup, LineupEntry } from '@/types/domain';
 
@@ -33,7 +34,6 @@ function formationRows(formation: string, starters: LineupEntry[]) {
 }
 
 function PlayerToken({ entry, index }: { entry: LineupEntry; index: number }) {
-  const player = playerById(entry.playerId);
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.85, y: 6 }}
@@ -45,7 +45,7 @@ function PlayerToken({ entry, index }: { entry: LineupEntry; index: number }) {
         {entry.shirtNumber ?? '—'}
       </span>
       <span className="max-w-[76px] truncate text-center text-[10px] leading-tight text-ink-muted">
-        {player?.nickname ?? player?.name.split(' ')[0] ?? '—'}
+        {entry.playerNickname ?? entry.playerName.split(' ')[0]}
       </span>
     </motion.div>
   );
@@ -107,9 +107,11 @@ export default function LineupsPage() {
         title="Escalações"
         description="Ficha de partida com titulares, reservas e comissão técnica relacionada."
         actions={
-          <Button variant="primary" icon={<Plus />}>
-            Nova escalação
-          </Button>
+          <Tooltip label="O montador de escalação entra na próxima etapa.">
+            <Button variant="secondary" icon={<Plus />} disabled>
+              Nova escalação
+            </Button>
+          </Tooltip>
         }
       />
 
@@ -118,7 +120,7 @@ export default function LineupsPage() {
           <EmptyState
             icon={<ClipboardList />}
             title="Nenhuma escalação registrada"
-            description="Monte a ficha de uma partida para relacionar titulares e reservas."
+            description="As fichas de partida aparecem aqui. O montador de escalação será habilitado na próxima etapa; a API já aceita e devolve escalações."
           />
         </div>
       ) : (
@@ -178,7 +180,7 @@ export default function LineupsPage() {
             >
               <header className="flex flex-wrap items-start justify-between gap-4 border-b border-line px-6 py-5">
                 <div className="min-w-0">
-                  <p className="eyebrow mb-2">{match ? competitionName(match.competitionId) : 'Ficha de partida'}</p>
+                  <p className="eyebrow mb-2">{match?.competitionName ?? 'Ficha de partida'}</p>
                   <h3 className="font-heading text-xl font-medium tracking-editorial text-ink">
                     {match ? matchLabel(match) : 'Partida removida'}
                   </h3>
@@ -202,12 +204,13 @@ export default function LineupsPage() {
                     <p className="eyebrow mb-3">Titulares · {starters.length}</p>
                     <ul className="flex flex-col divide-y divide-line rounded-md border border-line">
                       {starters.map((entry) => {
-                        const player = playerById(entry.playerId);
                         return (
                           <li key={entry.playerId} className="flex items-center gap-3 px-3 py-2">
                             <span className="tabular w-6 shrink-0 text-2xs text-gold">{entry.shirtNumber ?? '—'}</span>
-                            <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{player?.name ?? '—'}</span>
-                            <span className="shrink-0 text-2xs text-ink-ghost">{entry.position.slice(0, 3)}</span>
+                            <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{entry.playerName}</span>
+                            <span className="shrink-0 text-2xs text-ink-ghost">
+                              {(entry.position ?? '').slice(0, 3)}
+                            </span>
                           </li>
                         );
                       })}
@@ -218,11 +221,10 @@ export default function LineupsPage() {
                     <p className="eyebrow mb-3">Reservas · {reserves.length}</p>
                     <ul className="flex flex-col divide-y divide-line rounded-md border border-line">
                       {reserves.map((entry) => {
-                        const player = playerById(entry.playerId);
                         return (
                           <li key={entry.playerId} className="flex items-center gap-3 px-3 py-2">
                             <span className="tabular w-6 shrink-0 text-2xs text-ink-faint">{entry.shirtNumber ?? '—'}</span>
-                            <span className="min-w-0 flex-1 truncate text-[13px] text-ink-muted">{player?.name ?? '—'}</span>
+                            <span className="min-w-0 flex-1 truncate text-[13px] text-ink-muted">{entry.playerName}</span>
                           </li>
                         );
                       })}
@@ -232,11 +234,14 @@ export default function LineupsPage() {
                   <div>
                     <p className="eyebrow mb-3">Comissão</p>
                     <ul className="flex flex-col gap-1.5">
-                      {current.staffIds.map((staffId) => (
-                        <li key={staffId} className="text-[13px] text-ink-muted">
-                          {staffName(staffId)}
+                      {current.staff.map((member) => (
+                        <li key={member.id} className="text-[13px] text-ink-muted">
+                          {member.name}
                         </li>
                       ))}
+                      {current.staff.length === 0 && (
+                        <li className="text-2xs text-ink-ghost">Nenhum profissional relacionado.</li>
+                      )}
                     </ul>
                   </div>
                 </div>

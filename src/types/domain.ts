@@ -1,5 +1,5 @@
 /**
- * Domain model for Juventus F.C.
+ * Domain model for the club management platform.
  *
  * Every entity carries a stable `id` and audit stamps so the mock repositories
  * can be swapped for a real database/API without touching the UI layer.
@@ -37,8 +37,10 @@ export interface Person extends Entity {
   city?: string;
   status: PersonStatus;
   notes?: string;
-  /** Denormalized for fast filtering; derived from the membership tables. */
+  /** Derived server-side from the membership tables; never stored on the row. */
   roles: MembershipRole[];
+  /** Whether an access account is linked to this person. */
+  hasAccount?: boolean;
 }
 
 export type MembershipRole = 'jogador' | 'diretoria' | 'comissao' | 'administrativo' | 'outro';
@@ -55,7 +57,8 @@ export type Position =
   | 'Ponta'
   | 'Atacante';
 
-export type SquadTeam = 'Profissional' | 'Sub-20' | 'Sub-17' | 'Veteranos';
+/** Suggested categories offered during onboarding; real teams live in the DB. */
+export const SUGGESTED_TEAMS = ['Profissional', 'Sub-20', 'Sub-17', 'Veteranos'] as const;
 
 export type SquadStatus = 'ativo' | 'lesionado' | 'suspenso' | 'afastado' | 'inativo';
 
@@ -66,7 +69,9 @@ export interface Player extends Entity {
   shirtNumber?: number;
   position: Position;
   secondaryPosition?: Position;
-  team: SquadTeam;
+  /** Category id; `team` carries the resolved name for display. */
+  teamId?: ID;
+  team: string;
   birthDate?: ISODate;
   phone?: string;
   joinedAt: ISODate;
@@ -95,8 +100,10 @@ export type StaffRole = 'Treinador' | 'Auxiliar Técnico' | 'Preparador Físico'
 export interface StaffMember extends Entity {
   personId: ID;
   name: string;
-  role: StaffRole;
-  team: SquadTeam;
+  role: string;
+  specialty?: string;
+  teamId?: ID;
+  team: string;
   startDate: ISODate;
   status: 'ativo' | 'inativo';
   notes?: string;
@@ -108,9 +115,10 @@ export type CompetitionStatus = 'planejado' | 'em andamento' | 'encerrado';
 
 export interface Competition extends Entity {
   name: string;
-  season: string; // "2026"
+  season: string;
   organizer: string;
-  team: SquadTeam;
+  teamId?: ID;
+  team: string;
   status: CompetitionStatus;
   format?: string;
   notes?: string;
@@ -126,7 +134,10 @@ export interface Match extends Entity {
   location: string;
   venue: MatchVenue;
   competitionId?: ID;
-  team: SquadTeam;
+  /** Resolved competition name, so a fixture row renders without a lookup. */
+  competitionName?: string;
+  teamId?: ID;
+  team: string;
   status: MatchStatus;
   goalsFor?: number;
   goalsAgainst?: number;
@@ -140,8 +151,11 @@ export interface Training extends Entity {
   date: ISODate;
   time: string;
   location: string;
-  team: SquadTeam;
-  responsibleId?: ID; // StaffMember
+  teamId?: ID;
+  team: string;
+  responsibleId?: ID;
+  /** Resolved responsible name, denormalised by the API. */
+  responsibleName?: string;
   type: TrainingType;
   status: TrainingStatus;
   notes?: string;
@@ -151,17 +165,22 @@ export type LineupSlot = 'titular' | 'reserva';
 
 export interface LineupEntry {
   playerId: ID;
+  playerName: string;
+  playerNickname?: string;
   slot: LineupSlot;
   shirtNumber?: number;
-  position: Position;
+  position?: string;
 }
 
-export interface Lineup extends Entity {
+export interface Lineup {
+  id: ID;
   matchId: ID;
-  formation: string; // "4-3-3"
+  formation: string;
   entries: LineupEntry[];
-  staffIds: ID[];
+  staff: { id: ID; name: string }[];
   notes?: string;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
 }
 
 /* --------------------------------------------------------------- financial */
@@ -171,6 +190,8 @@ export type PaymentMethod = 'Pix' | 'Dinheiro' | 'Transferência' | 'Cartão' | 
 
 export interface MonthlyDue extends Entity {
   playerId: ID;
+  /** Resolved player name, denormalised by the API. */
+  playerName?: string;
   referenceMonth: string; // YYYY-MM
   dueDate: ISODate;
   expectedAmount: number;
@@ -248,6 +269,8 @@ export type MovementType = 'entrada' | 'saida' | 'ajuste';
 
 export interface InventoryMovement extends Entity {
   itemId: ID;
+  /** Resolved item name, denormalised by the API. */
+  itemName?: string;
   type: MovementType;
   quantity: number;
   date: ISODate;
@@ -258,32 +281,64 @@ export interface InventoryMovement extends Entity {
 
 /* -------------------------------------------------------------- club/meta */
 
-export interface ClubProfile {
-  name: string;
+export interface Club {
+  id: ID;
+  officialName: string;
   shortName: string;
-  foundedAt: string;
   city: string;
-  stadium: string;
-  colors: string;
-  president: string;
-  email: string;
+  state: string;
+  country: string;
+  foundedYear: string;
+  venue: string;
+  address: string;
   phone: string;
+  email: string;
+  website: string;
+  social: string;
+  crestKey?: string;
+  primaryColor: string;
+  secondaryColor: string;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface ClubSettings {
+  defaultMonthlyFee: number;
+  defaultDueDay: number;
+  paymentMethods: string[];
+  currency: string;
+  season: string;
+  lowStockAlerts: boolean;
+  dueReminders: boolean;
+}
+
+export interface Team {
+  id: ID;
+  name: string;
+  sortOrder: number;
 }
 
 export type ActivityKind = 'financeiro' | 'elenco' | 'futebol' | 'estoque' | 'sistema';
 
-export interface ActivityRecord {
+/** The signed-in account, as returned by /api/auth/session. */
+export interface SessionAccount {
   id: ID;
-  kind: ActivityKind;
-  title: string;
-  detail: string;
-  at: ISODateTime;
-  actor: string;
+  username: string;
+  displayName: string;
+  personId: ID;
+  isOwner: boolean;
+  permissions: string[];
 }
 
-/** Placeholder identity — replaced by the real session user in the next phase. */
-export interface ViewerProfile {
+/** An access account listed in the accounts screen. */
+export interface AccountSummary {
+  id: ID;
+  username: string;
+  personId: ID;
   name: string;
-  role: string;
-  initials: string;
+  status: string;
+  isOwner: boolean;
+  lastLoginAt?: ISODateTime;
+  createdAt: ISODateTime;
+  permissions: string[];
 }

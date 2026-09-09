@@ -21,8 +21,9 @@ import { DetailList } from '@/components/data/DetailList';
 import { useToast } from '@/components/ui/Toast';
 import { useDisclosure } from '@/hooks/useDisclosure';
 import { riseItem, staggerContainer } from '@/lib/motion';
-import { cn } from '@/lib/cn';
 import { useAsync } from '@/hooks/useAsync';
+import { useSession } from '@/app/SessionContext';
+import { apiDownload, ApiError } from '@/services/api';
 import { getCashFlow, getDashboardSummary } from '@/services/analytics';
 import { currency } from '@/lib/format';
 import { MONTHS_LONG, TODAY } from '@/lib/dates';
@@ -34,18 +35,20 @@ interface ReportDefinition {
   description: string;
   icon: LucideIcon;
   fields: string[];
+  /** Export endpoint and file name: /api/exports/<kind> → <kind>.xlsx */
+  kind: string;
 }
 
 const REPORTS: ReportDefinition[] = [
-  { id: 'rep-players', group: 'Clube', title: 'Elenco por equipe', description: 'Jogadores ativos, posições, categorias e situação no elenco.', icon: Users, fields: ['Nome', 'Camisa', 'Posição', 'Equipe', 'Situação', 'Mensalidade'] },
-  { id: 'rep-people', group: 'Clube', title: 'Pessoas cadastradas', description: 'Cadastro central com vínculos e dados de contato.', icon: Users, fields: ['Nome', 'Vínculos', 'Telefone', 'E-mail', 'Cidade', 'Status'] },
-  { id: 'rep-dues', group: 'Financeiro', title: 'Mensalidades por competência', description: 'Situação das cobranças mês a mês, com valores previstos e recebidos.', icon: Receipt, fields: ['Jogador', 'Referência', 'Vencimento', 'Previsto', 'Pago', 'Status'] },
-  { id: 'rep-income', group: 'Financeiro', title: 'Entradas por categoria', description: 'Origem dos recursos recebidos no período selecionado.', icon: ArrowUpRight, fields: ['Data', 'Descrição', 'Categoria', 'Origem', 'Valor', 'Responsável'] },
-  { id: 'rep-expense', group: 'Financeiro', title: 'Saídas por categoria', description: 'Despesas agrupadas por natureza e fornecedor.', icon: Wallet, fields: ['Data', 'Descrição', 'Categoria', 'Fornecedor', 'Valor', 'Responsável'] },
-  { id: 'rep-cashflow', group: 'Financeiro', title: 'Fluxo de caixa consolidado', description: 'Entradas, saídas e saldo acumulado por mês.', icon: Wallet, fields: ['Mês', 'Entradas', 'Saídas', 'Resultado', 'Saldo'] },
-  { id: 'rep-matches', group: 'Futebol', title: 'Jogos e resultados', description: 'Partidas realizadas e agendadas por competição e categoria.', icon: CalendarDays, fields: ['Data', 'Adversário', 'Competição', 'Mando', 'Placar', 'Status'] },
-  { id: 'rep-trainings', group: 'Futebol', title: 'Treinamentos realizados', description: 'Sessões por equipe, tipo de trabalho e responsável.', icon: CalendarDays, fields: ['Data', 'Tipo', 'Equipe', 'Local', 'Responsável', 'Status'] },
-  { id: 'rep-inventory', group: 'Patrimônio', title: 'Posição de estoque', description: 'Itens, quantidades, mínimos e alertas de reposição.', icon: Boxes, fields: ['Item', 'Categoria', 'Quantidade', 'Mínimo', 'Localização', 'Status'] },
+  { id: 'rep-players', group: 'Clube', title: 'Elenco por equipe', description: 'Jogadores ativos, posições, categorias e situação no elenco.', icon: Users, fields: ['Nome', 'Camisa', 'Posição', 'Equipe', 'Situação', 'Mensalidade'], kind: 'jogadores' },
+  { id: 'rep-people', group: 'Clube', title: 'Pessoas cadastradas', description: 'Cadastro central com vínculos e dados de contato.', icon: Users, fields: ['Nome', 'Vínculos', 'Telefone', 'E-mail', 'Cidade', 'Status'], kind: 'pessoas' },
+  { id: 'rep-dues', group: 'Financeiro', title: 'Mensalidades por competência', description: 'Situação das cobranças mês a mês, com valores previstos e recebidos.', icon: Receipt, fields: ['Jogador', 'Referência', 'Vencimento', 'Previsto', 'Pago', 'Status'], kind: 'mensalidades' },
+  { id: 'rep-income', group: 'Financeiro', title: 'Entradas por categoria', description: 'Origem dos recursos recebidos no período selecionado.', icon: ArrowUpRight, fields: ['Data', 'Descrição', 'Categoria', 'Origem', 'Valor', 'Responsável'], kind: 'financeiro' },
+  { id: 'rep-expense', group: 'Financeiro', title: 'Saídas por categoria', description: 'Despesas agrupadas por natureza e fornecedor.', icon: Wallet, fields: ['Data', 'Descrição', 'Categoria', 'Fornecedor', 'Valor', 'Responsável'], kind: 'financeiro' },
+  { id: 'rep-cashflow', group: 'Financeiro', title: 'Fluxo de caixa consolidado', description: 'Entradas, saídas e saldo acumulado por mês.', icon: Wallet, fields: ['Mês', 'Entradas', 'Saídas', 'Resultado', 'Saldo'], kind: 'financeiro' },
+  { id: 'rep-matches', group: 'Futebol', title: 'Jogos e resultados', description: 'Partidas realizadas e agendadas por competição e categoria.', icon: CalendarDays, fields: ['Data', 'Adversário', 'Competição', 'Mando', 'Placar', 'Status'], kind: 'futebol' },
+  { id: 'rep-trainings', group: 'Futebol', title: 'Treinamentos realizados', description: 'Sessões por equipe, tipo de trabalho e responsável.', icon: CalendarDays, fields: ['Data', 'Tipo', 'Equipe', 'Local', 'Responsável', 'Status'], kind: 'futebol' },
+  { id: 'rep-inventory', group: 'Patrimônio', title: 'Posição de estoque', description: 'Itens, quantidades, mínimos e alertas de reposição.', icon: Boxes, fields: ['Item', 'Categoria', 'Quantidade', 'Mínimo', 'Localização', 'Status'], kind: 'estoque' },
 ];
 
 const GROUPS = ['Todos', 'Clube', 'Futebol', 'Financeiro', 'Patrimônio'];
@@ -53,8 +56,27 @@ const GROUPS = ['Todos', 'Clube', 'Futebol', 'Financeiro', 'Patrimônio'];
 export default function ReportsPage() {
   const [group, setGroup] = useState('Todos');
   const [selected, setSelected] = useState<ReportDefinition | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
   const preview = useDisclosure();
   const toast = useToast();
+  const { can } = useSession();
+  const canExport = can('reports.export');
+
+  /** Streams the workbook straight from the API; the file is built server-side. */
+  const download = async (report: ReportDefinition) => {
+    setDownloading(report.kind);
+    try {
+      await apiDownload(`/exports/${report.kind}`, `${report.kind}.xlsx`);
+      toast.success('Planilha gerada', `${report.kind}.xlsx foi baixado.`);
+    } catch (cause) {
+      toast.error(
+        'Não foi possível exportar',
+        cause instanceof ApiError ? cause.message : 'Tente novamente em instantes.',
+      );
+    } finally {
+      setDownloading(null);
+    }
+  };
 
   const summary = useAsync(getDashboardSummary, []);
   const cashFlow = useAsync(() => getCashFlow(6), []);
@@ -114,13 +136,11 @@ export default function ReportsPage() {
           const Icon = report.icon;
           return (
             <motion.li key={report.id} variants={riseItem}>
+              <div className="flex h-full flex-col overflow-hidden rounded-lg border border-line bg-graphite transition-colors duration-200 hover:border-line-strong">
               <button
                 type="button"
                 onClick={() => openPreview(report)}
-                className={cn(
-                  'group flex h-full w-full flex-col rounded-lg border border-line bg-graphite p-5 text-left',
-                  'transition-colors duration-200 hover:border-line-strong hover:bg-surface-raised',
-                )}
+                className="group flex flex-1 flex-col p-5 text-left transition-colors duration-200 hover:bg-surface-raised"
               >
                 <div className="flex items-start justify-between gap-3">
                   <span className="flex h-9 w-9 items-center justify-center rounded-md border border-line bg-surface-sunken text-ink-faint transition-colors duration-200 group-hover:text-gold">
@@ -131,10 +151,24 @@ export default function ReportsPage() {
                 <p className="mt-4 font-heading text-[15px] font-medium tracking-editorial text-ink">{report.title}</p>
                 <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">{report.description}</p>
                 <span className="mt-auto flex items-center gap-1.5 pt-5 text-2xs text-ink-ghost transition-colors duration-200 group-hover:text-gold">
-                  Visualizar estrutura
+                  Ver detalhes
                   <ArrowUpRight className="h-3 w-3 transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden />
                 </span>
               </button>
+              {canExport && (
+                <div className="border-t border-line px-5 py-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={<Download />}
+                    loading={downloading === report.kind}
+                    onClick={() => download(report)}
+                  >
+                    Exportar Excel
+                  </Button>
+                </div>
+              )}
+              </div>
             </motion.li>
           );
         })}
@@ -150,20 +184,16 @@ export default function ReportsPage() {
             <Button variant="ghost" onClick={preview.close}>
               Fechar
             </Button>
-            <Button
-              variant="gold"
-              icon={<Download />}
-              onClick={() => {
-                toast.notify({
-                  tone: 'info',
-                  title: 'Exportação na próxima etapa',
-                  description: 'A geração de PDF e planilha será habilitada com os dados reais.',
-                });
-                preview.close();
-              }}
-            >
-              Exportar
-            </Button>
+            {canExport && selected && (
+              <Button
+                variant="gold"
+                icon={<Download />}
+                loading={downloading === selected.kind}
+                onClick={() => download(selected)}
+              >
+                Exportar Excel
+              </Button>
+            )}
           </>
         }
       >
@@ -204,11 +234,11 @@ export default function ReportsPage() {
               </div>
             </div>
 
-            {selected.id === 'rep-cashflow' && cashFlow.data && (
+            {selected.id === 'rep-cashflow' && cashFlow.data?.points && (
               <div>
                 <p className="eyebrow mb-3">Prévia dos dados</p>
                 <ul className="flex flex-col divide-y divide-line rounded-md border border-line">
-                  {cashFlow.data.map((point) => (
+                  {cashFlow.data.points.map((point) => (
                     <li key={point.ref} className="flex items-center justify-between gap-4 px-3.5 py-2.5 text-2xs">
                       <span className="uppercase tracking-label text-ink-faint">{point.label}</span>
                       <span className="flex items-center gap-4">
@@ -224,8 +254,8 @@ export default function ReportsPage() {
 
             <p className="flex items-start gap-2.5 rounded-md border border-line bg-surface-sunken px-3.5 py-3 text-2xs leading-relaxed text-ink-faint">
               <FileBarChart className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
-              Nesta versão os relatórios exibem a estrutura definitiva. A exportação em PDF e
-              planilha será habilitada junto com a integração de dados reais.
+              A planilha é gerada no servidor a partir dos dados atuais do clube, em formato
+              .xlsx, com uma aba por conjunto de informações.
             </p>
           </div>
         )}

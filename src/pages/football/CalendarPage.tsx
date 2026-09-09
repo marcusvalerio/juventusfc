@@ -12,7 +12,8 @@ import { EmptyState, Skeleton } from '@/components/ui/States';
 import { cn } from '@/lib/cn';
 import { DUR, EASE, riseItem, staggerContainer } from '@/lib/motion';
 import { useAsync } from '@/hooks/useAsync';
-import { getAgenda, type AgendaEvent } from '@/services/analytics';
+import { buildAgenda, type AgendaEvent } from '@/services/analytics';
+import { matchesRepo, trainingsRepo } from '@/services';
 import {
   MONTHS_LONG,
   TODAY,
@@ -29,7 +30,10 @@ const KIND_STYLE = {
 } as const;
 
 export default function CalendarPage() {
-  const { data, status } = useAsync(getAgenda, []);
+  const { data, status } = useAsync(async () => {
+    const [matches, trainings] = await Promise.all([matchesRepo.list(), trainingsRepo.list()]);
+    return buildAgenda(matches, trainings);
+  }, []);
   const [cursor, setCursor] = useState(() => new Date(TODAY.getFullYear(), TODAY.getMonth(), 1));
   const [view, setView] = useState<'mes' | 'semana'>('mes');
   const [selected, setSelected] = useState<AgendaEvent | null>(null);

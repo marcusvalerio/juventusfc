@@ -7,3 +7,6 @@ dist-ssr
 
 # TypeScript incremental build info
 *.tsbuildinfo
+
+# Wrangler local state (local D1 database, caches)
+.wrangler

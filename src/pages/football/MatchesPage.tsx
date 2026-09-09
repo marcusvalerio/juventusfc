@@ -15,15 +15,17 @@ import { DatePicker, Field, Input, Select, Textarea } from '@/components/ui/Fiel
 import { riseItem, staggerContainer } from '@/lib/motion';
 import { cn } from '@/lib/cn';
 import { useAsync } from '@/hooks/useAsync';
+import { useToast } from '@/components/ui/Toast';
+import { runSubmit } from '@/lib/submit';
 import { useDisclosure } from '@/hooks/useDisclosure';
 import { useTableState } from '@/hooks/useTableState';
 import { matchesRepo } from '@/services';
-import { competitionName, matchLabel, matchResult } from '@/services/analytics';
-import { competitions } from '@/data/football';
+import { matchLabel, matchResult } from '@/services/analytics';
+import { competitionsRepo } from '@/services';
+import { useSession } from '@/app/SessionContext';
 import { TODAY_ISO, formatDate, formatDateLong, formatDateShort } from '@/lib/dates';
-import type { Match, SquadTeam } from '@/types/domain';
+import type { Match } from '@/types/domain';
 
-const TEAMS: SquadTeam[] = ['Profissional', 'Sub-20', 'Sub-17', 'Veteranos'];
 const STATUSES = ['agendado', 'confirmado', 'encerrado', 'adiado', 'cancelado'];
 
 const emptyForm = {
@@ -33,7 +35,7 @@ const emptyForm = {
   location: '',
   venue: 'mandante',
   competitionId: '',
-  team: TEAMS[0] as string,
+  teamId: '',
   status: 'agendado',
   notes: '',
 };
@@ -53,12 +55,41 @@ function Scoreline({ match }: { match: Match }) {
 }
 
 export default function MatchesPage() {
+  const { teams } = useSession();
   const { data, status, reload } = useAsync(() => matchesRepo.list(), []);
+  const competitions = useAsync(() => competitionsRepo.list(), []);
   const [tab, setTab] = useState('proximos');
   const [selected, setSelected] = useState<Match | null>(null);
   const form = useDisclosure();
+  const toast = useToast();
   const [values, setValues] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const openCreate = () => {
+    setEditingId(null);
+    setValues(emptyForm);
+    setErrors({});
+    form.open();
+  };
+
+  const openEdit = (match: Match) => {
+    setEditingId(match.id);
+    setValues({
+      date: match.date,
+      time: match.time,
+      opponent: match.opponent,
+      location: match.location ?? '',
+      venue: match.venue,
+      competitionId: match.competitionId ?? '',
+      teamId: match.teamId ?? '',
+      status: match.status,
+      notes: match.notes ?? '',
+    });
+    setErrors({});
+    setSelected(null);
+    form.open();
+  };
 
   const scoped = (data ?? []).filter((match) =>
     tab === 'proximos' ? match.date >= TODAY_ISO : tab === 'realizados' ? match.status === 'encerrado' : true,
@@ -89,7 +120,7 @@ export default function MatchesPage() {
       render: (match) => (
         <div className="min-w-0">
           <p className="truncate text-[13px] text-ink">{matchLabel(match)}</p>
-          <p className="truncate text-2xs text-ink-faint">{competitionName(match.competitionId)}</p>
+          <p className="truncate text-2xs text-ink-faint">{match.competitionName ?? 'Amistoso'}</p>
         </div>
       ),
     },
@@ -111,15 +142,40 @@ export default function MatchesPage() {
     { key: 'status', header: 'Status', align: 'right', render: (match) => <StatusBadge status={match.status} /> },
   ];
 
-  const submit = () => {
+  const submit = async () => {
     const nextErrors: Record<string, string> = {};
     if (!values.date) nextErrors.date = 'Informe a data da partida.';
     if (!values.opponent.trim()) nextErrors.opponent = 'Informe o adversário.';
     if (!values.location.trim()) nextErrors.location = 'Informe o local.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return false;
-    setValues(emptyForm);
-    return true;
+
+    const payload = {
+      date: values.date,
+      time: values.time,
+      opponent: values.opponent,
+      location: values.location,
+      venue: values.venue,
+      competitionId: values.competitionId || null,
+      teamId: values.teamId || null,
+      status: values.status,
+      notes: values.notes,
+    };
+
+    const ok = await runSubmit(
+      async () => {
+        if (editingId) await matchesRepo.update(editingId, payload);
+        else await matchesRepo.create(payload);
+        reload();
+      },
+      setErrors,
+      toast,
+    );
+    if (ok) {
+      setValues(emptyForm);
+      setEditingId(null);
+    }
+    return ok;
   };
 
   const next = (data ?? [])
@@ -133,7 +189,7 @@ export default function MatchesPage() {
         title="Jogos"
         description="Agenda de partidas, resultados e histórico por competição e categoria."
         actions={
-          <Button variant="primary" icon={<Plus />} onClick={form.open}>
+          <Button variant="primary" icon={<Plus />} onClick={openCreate}>
             Nova partida
           </Button>
         }
@@ -165,7 +221,7 @@ export default function MatchesPage() {
               </p>
             </motion.div>
             <motion.div variants={riseItem} className="flex items-center gap-2">
-              <Badge tone="gold">{competitionName(next.competitionId)}</Badge>
+              <Badge tone="gold">{next.competitionName ?? 'Amistoso'}</Badge>
               <StatusBadge status={next.status} />
             </motion.div>
           </div>
@@ -201,11 +257,11 @@ export default function MatchesPage() {
             onSearch={table.setSearch}
             searchPlaceholder="Buscar adversário…"
             filters={[
-              { key: 'team', label: 'Equipe', options: TEAMS.map((team) => ({ value: team, label: team })) },
+              { key: 'team', label: 'Equipe', options: teams.map((team) => ({ value: team.name, label: team.name })) },
               {
                 key: 'competitionId',
                 label: 'Campeonato',
-                options: competitions.map((competition) => ({ value: competition.id, label: competition.name })),
+                options: (competitions.data ?? []).map((competition) => ({ value: competition.id, label: competition.name })),
               },
               { key: 'status', label: 'Status', options: STATUSES.map((value) => ({ value, label: value })) },
             ]}
@@ -229,13 +285,15 @@ export default function MatchesPage() {
         open={Boolean(selected)}
         onClose={() => setSelected(null)}
         title={selected ? matchLabel(selected) : ''}
-        subtitle={selected ? competitionName(selected.competitionId) : ''}
+        subtitle={selected?.competitionName ?? 'Amistoso'}
         footer={
           <>
             <Button variant="ghost" onClick={() => setSelected(null)}>
               Fechar
             </Button>
-            <Button variant="secondary">Editar partida</Button>
+            <Button variant="secondary" onClick={() => selected && openEdit(selected)}>
+              Editar partida
+            </Button>
           </>
         }
       >
@@ -279,9 +337,9 @@ export default function MatchesPage() {
       <FormModal
         open={form.isOpen}
         onClose={form.close}
-        title="Nova partida"
+        title={editingId ? 'Editar partida' : 'Nova partida'}
         description="Registre o confronto, o local e a competição correspondente."
-        successMessage="Partida registrada"
+        successMessage={editingId ? 'Partida atualizada' : 'Partida registrada'}
         onSubmit={submit}
       >
         <FormSection title="Confronto">
@@ -340,7 +398,7 @@ export default function MatchesPage() {
                 value={values.competitionId}
                 placeholder="Amistoso"
                 onChange={(e) => setValues({ ...values, competitionId: e.target.value })}
-                options={competitions.map((competition) => ({ value: competition.id, label: competition.name }))}
+                options={(competitions.data ?? []).map((competition) => ({ value: competition.id, label: competition.name }))}
               />
             )}
           </Field>
@@ -348,9 +406,10 @@ export default function MatchesPage() {
             {({ id }) => (
               <Select
                 id={id}
-                value={values.team}
-                onChange={(e) => setValues({ ...values, team: e.target.value })}
-                options={TEAMS.map((team) => ({ value: team, label: team }))}
+                value={values.teamId}
+                placeholder="Selecione a categoria"
+                onChange={(e) => setValues({ ...values, teamId: e.target.value })}
+                options={teams.map((team) => ({ value: team.id, label: team.name }))}
               />
             )}
           </Field>

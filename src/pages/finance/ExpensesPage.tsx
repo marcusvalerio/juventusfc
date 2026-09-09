@@ -13,14 +13,6 @@ const CATEGORIES: readonly ExpenseCategory[] = [
   'Outros',
 ];
 
-const RESPONSIBLES = [
-  'Beatriz Rangel',
-  'Cláudia Perretti',
-  'Henrique Salgado',
-  'Rogério Tavares',
-  'Marina Duarte',
-  'Jorge Antunes',
-] as const;
 
 export default function ExpensesPage() {
   return (
@@ -33,7 +25,6 @@ export default function ExpensesPage() {
       counterpartyKey="supplier"
       counterpartyLabel="Fornecedor"
       counterpartyPlaceholder="Ex.: Esportes Marchetti"
-      responsibles={RESPONSIBLES}
     />
   );
 }

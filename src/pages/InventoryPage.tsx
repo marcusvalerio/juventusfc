@@ -16,28 +16,31 @@ import { ProgressBar } from '@/components/ui/Progress';
 import { DatePicker, Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { cn } from '@/lib/cn';
 import { useAsync } from '@/hooks/useAsync';
+import { useToast } from '@/components/ui/Toast';
+import { runSubmit } from '@/lib/submit';
 import { useDisclosure } from '@/hooks/useDisclosure';
 import { useTableState } from '@/hooks/useTableState';
-import { inventoryRepo, movementsRepo } from '@/services';
+import { inventoryRepo, movementsRepo, peopleRepo } from '@/services';
 import { formatDate, formatDateShort } from '@/lib/dates';
 import type { InventoryCategory, InventoryItem, InventoryMovement } from '@/types/domain';
 
 const CATEGORIES: InventoryCategory[] = ['Uniformes', 'Bolas', 'Treino', 'Equipamentos', 'Saúde', 'Outros'];
 const UNITS = ['un', 'par', 'cx', 'kg'];
-const RESPONSIBLES = ['Renata Colombo', 'Jorge Antunes', 'Cláudia Perretti', 'Wesley Fontenele', 'Marina Duarte'];
 
 const emptyItem = { name: '', category: CATEGORIES[0] as string, quantity: '0', unit: 'un', minQuantity: '0', location: '', notes: '' };
-const emptyMovement = { itemId: '', type: 'entrada', quantity: '1', date: '', responsible: RESPONSIBLES[0], reason: '', notes: '' };
+const emptyMovement = { itemId: '', type: 'entrada', quantity: '1', date: '', responsible: '', reason: '', notes: '' };
 
 const MOVEMENT_TONE = { entrada: 'success', saida: 'danger', ajuste: 'warn' } as const;
 
 export default function InventoryPage() {
   const items = useAsync(() => inventoryRepo.list(), []);
+  const people = useAsync(() => peopleRepo.list(), []);
   const movements = useAsync(() => movementsRepo.list(), []);
   const [tab, setTab] = useState('itens');
   const [selected, setSelected] = useState<InventoryItem | null>(null);
   const itemForm = useDisclosure();
   const movementForm = useDisclosure();
+  const toast = useToast();
   const [itemValues, setItemValues] = useState(emptyItem);
   const [movementValues, setMovementValues] = useState(emptyMovement);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -134,25 +137,61 @@ export default function InventoryPage() {
     },
   ];
 
-  const submitItem = () => {
+  const submitItem = async () => {
     const nextErrors: Record<string, string> = {};
     if (!itemValues.name.trim()) nextErrors.name = 'Informe o nome do item.';
     if (!itemValues.location.trim()) nextErrors.location = 'Informe a localização.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return false;
-    setItemValues(emptyItem);
-    return true;
+
+    const ok = await runSubmit(
+      async () => {
+        await inventoryRepo.create({
+          name: itemValues.name,
+          category: itemValues.category,
+          quantity: itemValues.quantity,
+          unit: itemValues.unit,
+          minQuantity: itemValues.minQuantity,
+          location: itemValues.location,
+          notes: itemValues.notes,
+        });
+        items.reload();
+      },
+      setErrors,
+      toast,
+    );
+    if (ok) setItemValues(emptyItem);
+    return ok;
   };
 
-  const submitMovement = () => {
+  const submitMovement = async () => {
     const nextErrors: Record<string, string> = {};
     if (!movementValues.itemId) nextErrors.itemId = 'Selecione o item.';
     if (!movementValues.date) nextErrors.date = 'Informe a data.';
     if (!movementValues.reason.trim()) nextErrors.reason = 'Informe o motivo.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return false;
-    setMovementValues(emptyMovement);
-    return true;
+
+    const ok = await runSubmit(
+      async () => {
+        await movementsRepo.create({
+          itemId: movementValues.itemId,
+          type: movementValues.type,
+          quantity: movementValues.quantity,
+          date: movementValues.date,
+          responsible: movementValues.responsible,
+          reason: movementValues.reason,
+          notes: movementValues.notes,
+        });
+        // The balance changes with the movement, so both lists are refreshed.
+        items.reload();
+        movements.reload();
+      },
+      setErrors,
+      toast,
+    );
+    if (ok) setMovementValues(emptyMovement);
+    return ok;
   };
 
   return (
@@ -522,7 +561,11 @@ export default function InventoryPage() {
                 id={id}
                 value={movementValues.responsible}
                 onChange={(e) => setMovementValues({ ...movementValues, responsible: e.target.value })}
-                options={RESPONSIBLES.map((value) => ({ value, label: value }))}
+                placeholder="Selecione o responsável"
+                options={(people.data ?? []).map((person) => ({
+                  value: person.fullName,
+                  label: person.fullName,
+                }))}
               />
             )}
           </Field>

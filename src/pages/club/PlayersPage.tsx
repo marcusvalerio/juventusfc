@@ -15,15 +15,17 @@ import { DatePicker, Field, Input, Select, Textarea } from '@/components/ui/Fiel
 import { EmptyState, Skeleton } from '@/components/ui/States';
 import { riseItem, staggerContainer } from '@/lib/motion';
 import { useAsync } from '@/hooks/useAsync';
+import { useToast } from '@/components/ui/Toast';
+import { runSubmit } from '@/lib/submit';
 import { useDisclosure } from '@/hooks/useDisclosure';
 import { useTableState } from '@/hooks/useTableState';
 import { playersRepo } from '@/services';
 import { age } from '@/lib/dates';
 import { currency } from '@/lib/format';
-import type { Player, Position, SquadTeam } from '@/types/domain';
+import type { Player, Position } from '@/types/domain';
+import { useSession } from '@/app/SessionContext';
 
 const POSITIONS: Position[] = ['Goleiro', 'Zagueiro', 'Lateral Direito', 'Lateral Esquerdo', 'Volante', 'Meia', 'Ponta', 'Atacante'];
-const TEAMS: SquadTeam[] = ['Profissional', 'Sub-20', 'Sub-17', 'Veteranos'];
 const STATUSES = ['ativo', 'lesionado', 'suspenso', 'afastado', 'inativo'];
 
 const emptyForm = {
@@ -32,7 +34,7 @@ const emptyForm = {
   shirtNumber: '',
   position: POSITIONS[0] as string,
   secondaryPosition: '',
-  team: TEAMS[0] as string,
+  teamId: '',
   birthDate: '',
   phone: '',
   joinedAt: '',
@@ -77,9 +79,11 @@ function PlayerCard({ player }: { player: Player }) {
 
 export default function PlayersPage() {
   const navigate = useNavigate();
+  const { teams } = useSession();
   const { data, status, reload } = useAsync(() => playersRepo.list(), []);
   const [view, setView] = useState<'tabela' | 'cards'>('tabela');
   const form = useDisclosure();
+  const toast = useToast();
   const [values, setValues] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -150,7 +154,7 @@ export default function PlayersPage() {
     { key: 'status', header: 'Situação', align: 'right', render: (player) => <StatusBadge status={player.status} /> },
   ];
 
-  const submit = () => {
+  const submit = async () => {
     const nextErrors: Record<string, string> = {};
     if (!values.name.trim()) nextErrors.name = 'Informe o nome do jogador.';
     if (!values.joinedAt) nextErrors.joinedAt = 'Informe a data de entrada.';
@@ -158,8 +162,33 @@ export default function PlayersPage() {
     if (!day || day < 1 || day > 31) nextErrors.dueDay = 'Use um dia entre 1 e 31.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return false;
-    setValues(emptyForm);
-    return true;
+
+    const ok = await runSubmit(
+      async () => {
+        // The API creates the person when only a name is given, so the squad
+        // record always points at a row in the central register.
+        await playersRepo.create({
+          fullName: values.name,
+          nickname: values.nickname,
+          birthDate: values.birthDate,
+          phone: values.phone,
+          shirtNumber: values.shirtNumber === '' ? null : values.shirtNumber,
+          position: values.position,
+          secondaryPosition: values.secondaryPosition,
+          teamId: values.teamId || null,
+          joinedAt: values.joinedAt,
+          monthlyFee: values.monthlyFee,
+          dueDay: values.dueDay,
+          status: values.status,
+          notes: values.notes,
+        });
+        reload();
+      },
+      setErrors,
+      toast,
+    );
+    if (ok) setValues(emptyForm);
+    return ok;
   };
 
   const filterBar = (
@@ -168,7 +197,7 @@ export default function PlayersPage() {
       onSearch={table.setSearch}
       searchPlaceholder="Buscar jogador…"
       filters={[
-        { key: 'team', label: 'Equipe', options: TEAMS.map((team) => ({ value: team, label: team })) },
+        { key: 'team', label: 'Equipe', options: teams.map((team) => ({ value: team.name, label: team.name })) },
         { key: 'position', label: 'Posição', options: POSITIONS.map((position) => ({ value: position, label: position })) },
         {
           key: 'status',
@@ -333,9 +362,10 @@ export default function PlayersPage() {
             {({ id }) => (
               <Select
                 id={id}
-                value={values.team}
-                onChange={(event) => setValues({ ...values, team: event.target.value })}
-                options={TEAMS.map((team) => ({ value: team, label: team }))}
+                value={values.teamId}
+                placeholder="Selecione a categoria"
+                onChange={(event) => setValues({ ...values, teamId: event.target.value })}
+                options={teams.map((team) => ({ value: team.id, label: team.name }))}
               />
             )}
           </Field>

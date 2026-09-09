@@ -15,9 +15,12 @@ import { ChartCard } from '@/components/data/ChartCard';
 import { DonutChart } from '@/components/charts/DonutChart';
 import { Plus } from 'lucide-react';
 import { useAsync } from '@/hooks/useAsync';
+import { useToast } from '@/components/ui/Toast';
+import { runSubmit } from '@/lib/submit';
 import { useDisclosure } from '@/hooks/useDisclosure';
 import { useTableState } from '@/hooks/useTableState';
 import type { Repository } from '@/services/repository';
+import { peopleRepo } from '@/services';
 import { formatDate, formatDateShort, monthRefOf, TODAY } from '@/lib/dates';
 import { currency } from '@/lib/format';
 import type { PaymentMethod } from '@/types/domain';
@@ -48,7 +51,6 @@ export interface TransactionsViewProps<T extends Transaction> {
   counterpartyKey: 'source' | 'supplier';
   counterpartyLabel: string;
   counterpartyPlaceholder: string;
-  responsibles: readonly string[];
 }
 
 /**
@@ -64,11 +66,13 @@ export function TransactionsView<T extends Transaction>({
   counterpartyKey,
   counterpartyLabel,
   counterpartyPlaceholder,
-  responsibles,
 }: TransactionsViewProps<T>) {
   const { data, status, reload } = useAsync(() => repo.list(), [repo]);
+  // Whoever handled the money is a person in the club register, not free text.
+  const people = useAsync(() => peopleRepo.list(), []);
   const [selected, setSelected] = useState<T | null>(null);
   const form = useDisclosure();
+  const toast = useToast();
   const emptyForm = {
     date: '',
     description: '',
@@ -76,11 +80,36 @@ export function TransactionsView<T extends Transaction>({
     counterparty: '',
     amount: '',
     method: 'Pix',
-    responsible: responsibles[0],
+    responsible: '',
     notes: '',
   };
   const [values, setValues] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const openCreate = () => {
+    setEditingId(null);
+    setValues(emptyForm);
+    setErrors({});
+    form.open();
+  };
+
+  const openEdit = (entry: T) => {
+    setEditingId(entry.id);
+    setValues({
+      date: entry.date,
+      description: entry.description,
+      category: entry.category,
+      counterparty: (entry[counterpartyKey] as string) ?? '',
+      amount: String(entry.amount),
+      method: entry.method,
+      responsible: entry.responsible ?? '',
+      notes: entry.notes ?? '',
+    });
+    setErrors({});
+    setSelected(null);
+    form.open();
+  };
 
   const table = useTableState<T>(data, ['description', 'category', 'responsible', counterpartyKey] as (keyof T)[], {
     pageSize: 10,
@@ -138,7 +167,7 @@ export function TransactionsView<T extends Transaction>({
     },
   ];
 
-  const submit = () => {
+  const submit = async () => {
     const nextErrors: Record<string, string> = {};
     if (!values.date) nextErrors.date = 'Informe a data.';
     if (!values.description.trim()) nextErrors.description = 'Descreva o lançamento.';
@@ -146,8 +175,32 @@ export function TransactionsView<T extends Transaction>({
     if (!values.amount || Number(values.amount) <= 0) nextErrors.amount = 'Informe um valor maior que zero.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return false;
-    setValues(emptyForm);
-    return true;
+
+    const payload = {
+      date: values.date,
+      description: values.description,
+      category: values.category,
+      [counterpartyKey]: values.counterparty,
+      amount: values.amount,
+      method: values.method,
+      responsible: values.responsible,
+      notes: values.notes,
+    };
+
+    const ok = await runSubmit(
+      async () => {
+        if (editingId) await repo.update(editingId, payload);
+        else await repo.create(payload);
+        reload();
+      },
+      setErrors,
+      toast,
+    );
+    if (ok) {
+      setValues(emptyForm);
+      setEditingId(null);
+    }
+    return ok;
   };
 
   return (
@@ -157,7 +210,7 @@ export function TransactionsView<T extends Transaction>({
         title={title}
         description={description}
         actions={
-          <Button variant="primary" icon={<Plus />} onClick={form.open}>
+          <Button variant="primary" icon={<Plus />} onClick={openCreate}>
             {kind === 'entrada' ? 'Nova entrada' : 'Nova saída'}
           </Button>
         }
@@ -237,7 +290,9 @@ export function TransactionsView<T extends Transaction>({
             <Button variant="ghost" onClick={() => setSelected(null)}>
               Fechar
             </Button>
-            <Button variant="secondary">Editar lançamento</Button>
+            <Button variant="secondary" onClick={() => selected && openEdit(selected)}>
+              Editar lançamento
+            </Button>
           </>
         }
       >
@@ -267,9 +322,21 @@ export function TransactionsView<T extends Transaction>({
       <FormModal
         open={form.isOpen}
         onClose={form.close}
-        title={kind === 'entrada' ? 'Nova entrada' : 'Nova saída'}
+        title={
+          editingId
+            ? 'Editar lançamento'
+            : kind === 'entrada'
+              ? 'Nova entrada'
+              : 'Nova saída'
+        }
         description="O lançamento entra imediatamente no fluxo de caixa do período."
-        successMessage={kind === 'entrada' ? 'Entrada registrada' : 'Saída registrada'}
+        successMessage={
+          editingId
+            ? 'Lançamento atualizado'
+            : kind === 'entrada'
+              ? 'Entrada registrada'
+              : 'Saída registrada'
+        }
         onSubmit={submit}
       >
         <FormSection title="Lançamento">
@@ -343,7 +410,11 @@ export function TransactionsView<T extends Transaction>({
                 id={id}
                 value={values.responsible}
                 onChange={(e) => setValues({ ...values, responsible: e.target.value })}
-                options={responsibles.map((value) => ({ value, label: value }))}
+                placeholder="Selecione o responsável"
+                options={(people.data ?? []).map((person) => ({
+                  value: person.fullName,
+                  label: person.fullName,
+                }))}
               />
             )}
           </Field>

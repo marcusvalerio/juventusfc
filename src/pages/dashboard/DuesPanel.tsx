@@ -7,15 +7,7 @@ import { AnimatedNumber } from '@/components/motion/AnimatedNumber';
 import { Skeleton } from '@/components/ui/States';
 import { statusLabel, statusTone } from '@/components/ui/Badge';
 import { cn } from '@/lib/cn';
-import type { DuesSummary } from '@/services/analytics';
-
-export interface OpenDue {
-  id: string;
-  player: string;
-  amount: number;
-  dueDate: string;
-  status: string;
-}
+import type { DuesOverview, OpenDue } from '@/services/analytics';
 
 const TONE_BG: Record<string, string> = {
   success: 'bg-success',
@@ -31,10 +23,12 @@ const TONE_BG: Record<string, string> = {
 export function DuesPanel({
   summary,
   open,
+  byStatus,
   loading,
 }: {
-  summary?: DuesSummary;
+  summary?: DuesOverview;
   open?: OpenDue[];
+  byStatus?: Record<string, number>;
   loading?: boolean;
 }) {
   if (loading || !summary) {
@@ -47,8 +41,8 @@ export function DuesPanel({
     );
   }
 
-  const rate = summary.expected === 0 ? 0 : (summary.received / summary.expected) * 100;
-  const entries = Object.entries(summary.byStatus).filter(([, count]) => count > 0);
+  const rate = summary.collectionRate;
+  const entries = Object.entries(byStatus ?? {}).filter(([, count]) => count > 0);
   const total = entries.reduce((sum, [, count]) => sum + count, 0);
 
   return (

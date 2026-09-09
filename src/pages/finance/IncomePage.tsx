@@ -4,13 +4,6 @@ import type { IncomeCategory } from '@/types/domain';
 
 const CATEGORIES: readonly IncomeCategory[] = ['Mensalidades', 'Patrocínio', 'Eventos', 'Doações', 'Bilheteria', 'Outros'];
 
-const RESPONSIBLES = [
-  'Beatriz Rangel',
-  'Cláudia Perretti',
-  'Aurélio Mancini',
-  'Renata Colombo',
-  'Marcelo Grimaldi',
-] as const;
 
 export default function IncomePage() {
   return (
@@ -23,7 +16,6 @@ export default function IncomePage() {
       counterpartyKey="source"
       counterpartyLabel="Origem"
       counterpartyPlaceholder="Ex.: Grimaldi Materiais"
-      responsibles={RESPONSIBLES}
     />
   );
 }

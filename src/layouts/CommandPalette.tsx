@@ -6,10 +6,11 @@ import { CornerDownLeft, Search } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { modalVariants, overlayVariants } from '@/lib/motion';
 import { allNavItems } from '@/app/navigation';
-import { players } from '@/data/squad';
-import { matches } from '@/data/football';
 import { matchLabel } from '@/services/analytics';
 import { formatDateShort } from '@/lib/dates';
+import { useAsync } from '@/hooks/useAsync';
+import { matchesRepo, playersRepo } from '@/services';
+import { useSession } from '@/app/SessionContext';
 
 interface Command {
   id: string;
@@ -22,27 +23,40 @@ interface Command {
 /** Cmd/Ctrl+K navigation across sections, squad and fixtures. */
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
+  const { can } = useSession();
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Loaded once the palette is first opened, and only for what the account may see.
+  const squad = useAsync(
+    async () => (open && can('squad.view') ? await playersRepo.list() : []),
+    [open, can],
+  );
+  const fixtures = useAsync(
+    async () => (open && can('football.view') ? await matchesRepo.list() : []),
+    [open, can],
+  );
+
   const commands = useMemo<Command[]>(
     () => [
-      ...allNavItems.map((item) => ({
-        id: `nav-${item.to}`,
-        label: item.label,
-        hint: item.area,
-        group: 'Navegação',
-        to: item.to,
-      })),
-      ...players.map((player) => ({
+      ...allNavItems
+        .filter((item) => can(item.permission))
+        .map((item) => ({
+          id: `nav-${item.to}`,
+          label: item.label,
+          hint: item.area,
+          group: 'Navegação',
+          to: item.to,
+        })),
+      ...(squad.data ?? []).map((player) => ({
         id: `ply-${player.id}`,
         label: player.name,
         hint: `${player.position} · ${player.team}`,
         group: 'Jogadores',
         to: `/app/jogadores/${player.id}`,
       })),
-      ...matches.slice(0, 12).map((match) => ({
+      ...(fixtures.data ?? []).slice(0, 12).map((match) => ({
         id: `mtc-${match.id}`,
         label: matchLabel(match),
         hint: formatDateShort(match.date),
@@ -50,7 +64,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         to: '/app/jogos',
       })),
     ],
-    [],
+    [squad.data, fixtures.data, can],
   );
 
   const results = useMemo(() => {

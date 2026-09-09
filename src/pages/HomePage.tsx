@@ -3,19 +3,7 @@ import { motion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
 import { DUR, EASE } from '@/lib/motion';
 import { Crest } from '@/components/brand/Crest';
-import { clubProfile } from '@/data/club';
-import { players } from '@/data/squad';
-import { competitions } from '@/data/football';
-
-const activePlayers = players.filter((player) => player.status !== 'inativo').length;
-const runningCompetitions = competitions.filter((competition) => competition.status === 'em andamento').length;
-
-const facts = [
-  { label: 'Fundação', value: clubProfile.foundedAt },
-  { label: 'Elenco', value: `${activePlayers} atletas` },
-  { label: 'Competições', value: `${runningCompetitions} em disputa` },
-  { label: 'Praça', value: clubProfile.stadium },
-];
+import { useSession } from '@/app/SessionContext';
 
 /**
  * Institutional portal. Deliberately quiet: one statement, one way in, and a
@@ -23,6 +11,26 @@ const facts = [
  * the surrounding composition is already sized for it.
  */
 export default function HomePage() {
+  const { publicClub, needsOnboarding, account } = useSession();
+
+  const clubName = publicClub?.shortName ?? 'O clube';
+  const backdrop = (publicClub?.shortName ?? 'CLUBE').split(' ')[0].toUpperCase();
+  const location = [publicClub?.city, publicClub?.state].filter(Boolean).join(', ');
+
+  // Only facts the club actually recorded are shown — nothing is invented here.
+  const facts = [
+    publicClub?.foundedYear ? { label: 'Fundação', value: publicClub.foundedYear } : null,
+    location ? { label: 'Sede', value: location } : null,
+    publicClub?.venue ? { label: 'Praça', value: publicClub.venue } : null,
+  ].filter(Boolean) as { label: string; value: string }[];
+
+  const entryHref = needsOnboarding ? '/onboarding' : account ? '/app' : '/entrar';
+  const entryLabel = needsOnboarding
+    ? 'Configurar o clube'
+    : account
+      ? 'Entrar na plataforma'
+      : 'Acessar a plataforma';
+
   return (
     <div className="grain relative flex min-h-screen flex-col overflow-hidden bg-onyx">
       {/* Editorial backdrop: the club's name at architectural scale. */}
@@ -34,7 +42,7 @@ export default function HomePage() {
         className="pointer-events-none absolute inset-0 flex items-center justify-center"
       >
         <span className="whitespace-nowrap font-display text-[26vw] font-medium leading-none tracking-tightest text-ink opacity-[0.035] sm:text-[22vw]">
-          JUVENTUS
+          {backdrop}
         </span>
       </motion.div>
 
@@ -52,8 +60,8 @@ export default function HomePage() {
       >
         <span className="flex items-center gap-3">
           <Crest className="h-8" />
-          <span className="hidden font-display text-[15px] tracking-editorial text-ink sm:block">
-            Juventus <span className="text-gold">F.C.</span>
+          <span className="hidden max-w-[240px] truncate font-display text-[15px] tracking-editorial text-ink sm:block">
+            {clubName}
           </span>
         </span>
 
@@ -62,10 +70,10 @@ export default function HomePage() {
             Plataforma de gestão
           </span>
           <Link
-            to="/app"
+            to={entryHref}
             className="group inline-flex items-center gap-2 rounded-md border border-line-strong px-3.5 py-2 text-[13px] text-ink-muted transition-colors duration-200 hover:border-line-gold hover:text-ink"
           >
-            Acessar
+            {needsOnboarding ? 'Configurar' : 'Acessar'}
             <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
           </Link>
         </span>
@@ -110,7 +118,9 @@ export default function HomePage() {
           variants={{ initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0, transition: { duration: DUR.editorial, ease: EASE } } }}
           className="eyebrow"
         >
-          {clubProfile.city} · desde {clubProfile.foundedAt}
+          {[location, publicClub?.foundedYear && `desde ${publicClub.foundedYear}`]
+            .filter(Boolean)
+            .join(' · ') || 'Plataforma de gestão'}
         </motion.p>
 
         <motion.h1
@@ -130,16 +140,17 @@ export default function HomePage() {
           </p>
 
           <Link
-            to="/app"
+            to={entryHref}
             className="group inline-flex items-center gap-2.5 rounded-md bg-ink px-5 py-3 text-sm font-medium text-onyx transition-colors duration-200 hover:bg-white"
           >
-            Entrar na plataforma
+            {entryLabel}
             <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
           </Link>
         </motion.div>
       </motion.section>
 
       {/* Footer facts */}
+      {facts.length > 0 && (
       <motion.footer
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -155,6 +166,7 @@ export default function HomePage() {
           ))}
         </dl>
       </motion.footer>
+      )}
     </div>
   );
 }

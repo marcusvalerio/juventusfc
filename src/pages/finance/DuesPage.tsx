@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus } from 'lucide-react';
+import { Plus, Sparkles } from 'lucide-react';
 import { PageTransition } from '@/components/motion/PageTransition';
 import { PageHeader } from '@/layouts/PageHeader';
 import { Stagger } from '@/components/motion/Reveal';
@@ -12,21 +12,23 @@ import { StatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { DatePicker, Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { useAsync } from '@/hooks/useAsync';
+import { useToast } from '@/components/ui/Toast';
+import { runSubmit } from '@/lib/submit';
 import { useDisclosure } from '@/hooks/useDisclosure';
 import { useTableState } from '@/hooks/useTableState';
-import { duesRepo } from '@/services';
-import { currentMonthRef, playerName } from '@/services/analytics';
-import { players } from '@/data/squad';
+import { duesRepo, playersRepo } from '@/services';
+import { apiFetch, ApiError } from '@/services/api';
+import { currentMonthRef } from '@/services/analytics';
 import { formatDate, formatMonthRef } from '@/lib/dates';
 import { currency } from '@/lib/format';
-import type { MonthlyDue, PaymentMethod } from '@/types/domain';
+import type { MonthlyDue, PaymentMethod, Player } from '@/types/domain';
 
 const STATUSES = ['pago', 'pendente', 'parcial', 'atrasado'];
 const METHODS: PaymentMethod[] = ['Pix', 'Dinheiro', 'Transferência', 'Cartão', 'Boleto'];
 
 const emptyForm = {
   playerId: '',
-  referenceMonth: currentMonthRef,
+  referenceMonth: currentMonthRef(),
   dueDate: '',
   expectedAmount: '180',
   paidAmount: '',
@@ -37,7 +39,10 @@ const emptyForm = {
 
 export default function DuesPage() {
   const { data, status, reload } = useAsync(() => duesRepo.list(), []);
+  const squad = useAsync(() => playersRepo.list(), []);
+  const players = squad.data ?? [];
   const form = useDisclosure();
+  const toast = useToast();
   const [values, setValues] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -49,14 +54,14 @@ export default function DuesPage() {
   const table = useTableState<MonthlyDue>(data, ['referenceMonth', 'status'], {
     pageSize: 12,
     initialSort: { key: 'dueDate', direction: 'desc' },
-    initialFilters: { referenceMonth: currentMonthRef },
+    initialFilters: { referenceMonth: currentMonthRef() },
   });
 
-  // Search matches the player's name, which lives outside the due record.
+  // The API denormalises the player's name onto each due, so search stays local.
   const rows = useMemo(() => {
     const needle = table.search.trim().toLowerCase();
     if (!needle) return table.rows;
-    return table.rows.filter((due) => playerName(due.playerId).toLowerCase().includes(needle));
+    return table.rows.filter((due) => (due.playerName ?? '').toLowerCase().includes(needle));
   }, [table.rows, table.search]);
 
   const scoped = (data ?? []).filter(
@@ -76,7 +81,7 @@ export default function DuesPage() {
           onClick={(event) => event.stopPropagation()}
           className="text-[13px] text-ink transition-colors duration-150 hover:text-gold"
         >
-          {playerName(due.playerId)}
+          {due.playerName ?? '—'}
         </Link>
       ),
     },
@@ -105,15 +110,56 @@ export default function DuesPage() {
     { key: 'status', header: 'Status', align: 'right', render: (due) => <StatusBadge status={due.status} /> },
   ];
 
-  const submit = () => {
+  const submit = async () => {
     const nextErrors: Record<string, string> = {};
     if (!values.playerId) nextErrors.playerId = 'Selecione o jogador.';
     if (!values.dueDate) nextErrors.dueDate = 'Informe o vencimento.';
     if (Number(values.expectedAmount) <= 0) nextErrors.expectedAmount = 'Informe um valor válido.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return false;
-    setValues(emptyForm);
-    return true;
+
+    const ok = await runSubmit(
+      async () => {
+        await duesRepo.create({
+          playerId: values.playerId,
+          referenceMonth: values.referenceMonth,
+          dueDate: values.dueDate,
+          expectedAmount: values.expectedAmount,
+          paidAmount: values.paidAmount || 0,
+          paidAt: values.paidAt,
+          method: values.paidAmount ? values.method : null,
+          notes: values.notes,
+        });
+        reload();
+      },
+      setErrors,
+      toast,
+    );
+    if (ok) setValues(emptyForm);
+    return ok;
+  };
+
+  // Generating the month's charges is the common path, so it gets its own action.
+  const [generating, setGenerating] = useState(false);
+  const generateMonth = async () => {
+    setGenerating(true);
+    try {
+      const result = await apiFetch<{ created: number }>('/finance/dues/generate', {
+        method: 'POST',
+        body: { referenceMonth: table.filters.referenceMonth ?? currentMonthRef() },
+      });
+      reload();
+      toast.success(
+        result.created > 0 ? `${result.created} mensalidades geradas` : 'Nada a gerar',
+        result.created > 0
+          ? 'Uma cobrança para cada jogador ainda sem lançamento no mês.'
+          : 'Todos os jogadores já possuem cobrança neste mês.',
+      );
+    } catch (cause) {
+      toast.error('Não foi possível gerar', cause instanceof ApiError ? cause.message : undefined);
+    } finally {
+      setGenerating(false);
+    }
   };
 
   return (
@@ -123,9 +169,14 @@ export default function DuesPage() {
         title="Mensalidades"
         description="Controle das contribuições do elenco por competência, com situação de cada cobrança."
         actions={
-          <Button variant="primary" icon={<Plus />} onClick={form.open}>
-            Registrar mensalidade
-          </Button>
+          <>
+            <Button variant="secondary" icon={<Sparkles />} loading={generating} onClick={generateMonth}>
+              Gerar mês
+            </Button>
+            <Button variant="primary" icon={<Plus />} onClick={form.open}>
+              Registrar mensalidade
+            </Button>
+          </>
         }
       />
 
@@ -170,7 +221,7 @@ export default function DuesPage() {
             filters={[
               { key: 'referenceMonth', label: 'Período', options: months },
               { key: 'status', label: 'Status', options: STATUSES.map((value) => ({ value, label: value })) },
-              { key: 'playerId', label: 'Jogador', options: players.map((player) => ({ value: player.id, label: player.name })) },
+              { key: 'playerId', label: 'Jogador', options: players.map((player: Player) => ({ value: player.id, label: player.name })) },
             ]}
             values={table.filters}
             onFilter={table.setFilter}
@@ -205,14 +256,14 @@ export default function DuesPage() {
                 value={values.playerId}
                 placeholder="Selecione o jogador"
                 onChange={(e) => {
-                  const player = players.find((item) => item.id === e.target.value);
+                  const player = players.find((item: Player) => item.id === e.target.value);
                   setValues({
                     ...values,
                     playerId: e.target.value,
                     expectedAmount: player ? String(player.monthlyFee) : values.expectedAmount,
                   });
                 }}
-                options={players.map((player) => ({ value: player.id, label: player.name }))}
+                options={players.map((player: Player) => ({ value: player.id, label: player.name }))}
               />
             )}
           </Field>

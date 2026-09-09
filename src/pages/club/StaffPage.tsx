@@ -12,34 +12,54 @@ import { DatePicker, Field, Select, Textarea } from '@/components/ui/Field';
 import { EmptyState, Skeleton } from '@/components/ui/States';
 import { riseItem, staggerContainer } from '@/lib/motion';
 import { useAsync } from '@/hooks/useAsync';
+import { useToast } from '@/components/ui/Toast';
+import { runSubmit } from '@/lib/submit';
 import { useDisclosure } from '@/hooks/useDisclosure';
 import { useTableState } from '@/hooks/useTableState';
-import { staffRepo } from '@/services';
-import { people } from '@/data/people';
+import { peopleRepo, staffRepo } from '@/services';
+import { useSession } from '@/app/SessionContext';
 import { formatDate } from '@/lib/dates';
-import type { StaffMember, StaffRole, SquadTeam } from '@/types/domain';
+import type { StaffMember, StaffRole } from '@/types/domain';
 
 const ROLES: StaffRole[] = ['Treinador', 'Auxiliar Técnico', 'Preparador Físico', 'Preparador de Goleiros', 'Massagista', 'Analista'];
-const TEAMS: SquadTeam[] = ['Profissional', 'Sub-20', 'Sub-17', 'Veteranos'];
 
-const emptyForm = { personId: '', role: ROLES[0] as string, team: TEAMS[0] as string, startDate: '', status: 'ativo', notes: '' };
+const emptyForm = { personId: '', role: ROLES[0] as string, teamId: '', startDate: '', status: 'ativo', notes: '' };
 
 export default function StaffPage() {
-  const { data, status } = useAsync(() => staffRepo.list(), []);
+  const { teams } = useSession();
+  const { data, status, reload } = useAsync(() => staffRepo.list(), []);
+  const people = useAsync(() => peopleRepo.list(), []);
   const form = useDisclosure();
+  const toast = useToast();
   const [values, setValues] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const table = useTableState<StaffMember>(data, ['name', 'role', 'team'], { pageSize: 12 });
 
-  const submit = () => {
+  const submit = async () => {
     const nextErrors: Record<string, string> = {};
     if (!values.personId) nextErrors.personId = 'Selecione a pessoa.';
     if (!values.startDate) nextErrors.startDate = 'Informe a data de início.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return false;
-    setValues(emptyForm);
-    return true;
+
+    const ok = await runSubmit(
+      async () => {
+        await staffRepo.create({
+          personId: values.personId,
+          role: values.role,
+          teamId: values.teamId || null,
+          startDate: values.startDate,
+          status: values.status,
+          notes: values.notes,
+        });
+        reload();
+      },
+      setErrors,
+      toast,
+    );
+    if (ok) setValues(emptyForm);
+    return ok;
   };
 
   return (
@@ -61,7 +81,7 @@ export default function StaffPage() {
           onSearch={table.setSearch}
           searchPlaceholder="Buscar profissional…"
           filters={[
-            { key: 'team', label: 'Equipe', options: TEAMS.map((team) => ({ value: team, label: team })) },
+            { key: 'team', label: 'Equipe', options: teams.map((team) => ({ value: team.name, label: team.name })) },
             { key: 'role', label: 'Função', options: ROLES.map((role) => ({ value: role, label: role })) },
           ]}
           values={table.filters}
@@ -132,7 +152,7 @@ export default function StaffPage() {
                 value={values.personId}
                 placeholder="Selecione a pessoa"
                 onChange={(event) => setValues({ ...values, personId: event.target.value })}
-                options={people.map((person) => ({ value: person.id, label: person.fullName }))}
+                options={(people.data ?? []).map((person) => ({ value: person.id, label: person.fullName }))}
               />
             )}
           </Field>
@@ -150,9 +170,10 @@ export default function StaffPage() {
             {({ id }) => (
               <Select
                 id={id}
-                value={values.team}
-                onChange={(event) => setValues({ ...values, team: event.target.value })}
-                options={TEAMS.map((team) => ({ value: team, label: team }))}
+                value={values.teamId}
+                placeholder="Selecione a categoria"
+                onChange={(event) => setValues({ ...values, teamId: event.target.value })}
+                options={teams.map((team) => ({ value: team.id, label: team.name }))}
               />
             )}
           </Field>

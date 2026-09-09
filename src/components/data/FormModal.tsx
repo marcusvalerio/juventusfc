@@ -11,14 +11,18 @@ export interface FormModalProps {
   size?: 'sm' | 'md' | 'lg';
   submitLabel?: string;
   successMessage: string;
-  /** Return false to keep the modal open (validation failed). */
-  onSubmit: () => boolean | void;
+  /**
+   * Performs the write. Return false to keep the modal open — used when
+   * validation failed or the API rejected the payload and the form is now
+   * showing field errors.
+   */
+  onSubmit: () => boolean | void | Promise<boolean | void>;
   children: React.ReactNode;
 }
 
 /**
- * Shared shell for every create/edit form: consistent footer, submit feedback
- * and a short simulated round-trip so the button's loading state is real.
+ * Shared shell for every create/edit form: one submit path, one place where the
+ * pending state and the success toast are handled.
  */
 export function FormModal({
   open,
@@ -34,14 +38,17 @@ export function FormModal({
   const [saving, setSaving] = useState(false);
   const toast = useToast();
 
-  const handleSubmit = () => {
-    if (onSubmit() === false) return;
+  const handleSubmit = async () => {
+    if (saving) return;
     setSaving(true);
-    window.setTimeout(() => {
-      setSaving(false);
-      toast.success(successMessage, 'Nesta versão os dados não são persistidos.');
+    try {
+      const result = await onSubmit();
+      if (result === false) return;
+      toast.success(successMessage);
       onClose();
-    }, 620);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -65,7 +72,7 @@ export function FormModal({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          handleSubmit();
+          void handleSubmit();
         }}
         className="flex flex-col gap-5"
       >

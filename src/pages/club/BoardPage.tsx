@@ -12,10 +12,11 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Drawer } from '@/components/ui/Drawer';
 import { DatePicker, Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { useAsync } from '@/hooks/useAsync';
+import { useToast } from '@/components/ui/Toast';
+import { runSubmit } from '@/lib/submit';
 import { useDisclosure } from '@/hooks/useDisclosure';
 import { useTableState } from '@/hooks/useTableState';
-import { boardRepo } from '@/services';
-import { people } from '@/data/people';
+import { boardRepo, peopleRepo } from '@/services';
 import { formatDate } from '@/lib/dates';
 import type { BoardMember } from '@/types/domain';
 
@@ -33,10 +34,36 @@ const emptyForm = { personId: '', role: ROLES[0], startDate: '', endDate: '', ph
 
 export default function BoardPage() {
   const { data, status, reload } = useAsync(() => boardRepo.list(), []);
+  const people = useAsync(() => peopleRepo.list(), []);
   const [selected, setSelected] = useState<BoardMember | null>(null);
   const form = useDisclosure();
+  const toast = useToast();
   const [values, setValues] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const openCreate = () => {
+    setEditingId(null);
+    setValues(emptyForm);
+    setErrors({});
+    form.open();
+  };
+
+  const openEdit = (member: BoardMember) => {
+    setEditingId(member.id);
+    setValues({
+      personId: member.personId,
+      role: member.role,
+      startDate: member.startDate ?? '',
+      endDate: member.endDate ?? '',
+      phone: member.phone ?? '',
+      email: member.email ?? '',
+      notes: member.notes ?? '',
+    });
+    setErrors({});
+    setSelected(null);
+    form.open();
+  };
 
   const table = useTableState<BoardMember>(data, ['name', 'role', 'email', 'phone'], {
     pageSize: 8,
@@ -62,14 +89,36 @@ export default function BoardPage() {
     { key: 'status', header: 'Status', align: 'right', render: (member) => <StatusBadge status={member.status} /> },
   ];
 
-  const submit = () => {
+  const submit = async () => {
     const nextErrors: Record<string, string> = {};
     if (!values.personId) nextErrors.personId = 'Selecione a pessoa.';
     if (!values.startDate) nextErrors.startDate = 'Informe a data de início.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return false;
-    setValues(emptyForm);
-    return true;
+
+    const payload = {
+      personId: values.personId,
+      role: values.role,
+      startDate: values.startDate,
+      endDate: values.endDate,
+      status: values.endDate ? 'encerrado' : 'ativo',
+      notes: values.notes,
+    };
+
+    const ok = await runSubmit(
+      async () => {
+        if (editingId) await boardRepo.update(editingId, payload);
+        else await boardRepo.create(payload);
+        reload();
+      },
+      setErrors,
+      toast,
+    );
+    if (ok) {
+      setValues(emptyForm);
+      setEditingId(null);
+    }
+    return ok;
   };
 
   const activeCount = (data ?? []).filter((member) => member.status === 'ativo').length;
@@ -87,7 +136,7 @@ export default function BoardPage() {
           </p>
         }
         actions={
-          <Button variant="primary" icon={<Plus />} onClick={form.open}>
+          <Button variant="primary" icon={<Plus />} onClick={openCreate}>
             Novo membro
           </Button>
         }
@@ -144,7 +193,9 @@ export default function BoardPage() {
             <Button variant="ghost" onClick={() => setSelected(null)}>
               Fechar
             </Button>
-            <Button variant="secondary">Editar</Button>
+            <Button variant="secondary" onClick={() => selected && openEdit(selected)}>
+              Editar
+            </Button>
           </>
         }
       >
@@ -176,9 +227,9 @@ export default function BoardPage() {
       <FormModal
         open={form.isOpen}
         onClose={form.close}
-        title="Novo membro da diretoria"
+        title={editingId ? 'Editar membro da diretoria' : 'Novo membro da diretoria'}
         description="O membro é vinculado a uma pessoa já cadastrada."
-        successMessage="Membro registrado"
+        successMessage={editingId ? 'Registro atualizado' : 'Membro registrado'}
         onSubmit={submit}
       >
         <FormSection title="Vínculo">
@@ -190,7 +241,7 @@ export default function BoardPage() {
                 value={values.personId}
                 placeholder="Selecione a pessoa"
                 onChange={(event) => setValues({ ...values, personId: event.target.value })}
-                options={people.map((person) => ({ value: person.id, label: person.fullName }))}
+                options={(people.data ?? []).map((person) => ({ value: person.id, label: person.fullName }))}
               />
             )}
           </Field>

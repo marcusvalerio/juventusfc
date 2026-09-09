@@ -13,24 +13,28 @@ import { Field, Input, Select, Textarea } from '@/components/ui/Field';
 import { EmptyState, Skeleton } from '@/components/ui/States';
 import { riseItem, staggerContainer } from '@/lib/motion';
 import { useAsync } from '@/hooks/useAsync';
+import { useToast } from '@/components/ui/Toast';
+import { runSubmit } from '@/lib/submit';
 import { useDisclosure } from '@/hooks/useDisclosure';
 import { useTableState } from '@/hooks/useTableState';
 import { competitionsRepo, matchesRepo } from '@/services';
 import { matchLabel, matchResult } from '@/services/analytics';
 import { formatDateShort } from '@/lib/dates';
 import { cn } from '@/lib/cn';
-import type { Competition, SquadTeam } from '@/types/domain';
+import type { Competition } from '@/types/domain';
+import { useSession } from '@/app/SessionContext';
 
-const TEAMS: SquadTeam[] = ['Profissional', 'Sub-20', 'Sub-17', 'Veteranos'];
 const STATUSES = ['planejado', 'em andamento', 'encerrado'];
 
-const emptyForm = { name: '', season: String(new Date().getFullYear()), organizer: '', team: TEAMS[0] as string, status: 'planejado', format: '', notes: '' };
+const emptyForm = { name: '', season: String(new Date().getFullYear()), organizer: '', teamId: '', status: 'planejado', format: '', notes: '' };
 
 export default function CompetitionsPage() {
-  const { data, status } = useAsync(() => competitionsRepo.list(), []);
+  const { teams } = useSession();
+  const { data, status, reload } = useAsync(() => competitionsRepo.list(), []);
   const matches = useAsync(() => matchesRepo.list(), []);
   const [selected, setSelected] = useState<Competition | null>(null);
   const form = useDisclosure();
+  const toast = useToast();
   const [values, setValues] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -41,14 +45,31 @@ export default function CompetitionsPage() {
       .filter((match) => match.competitionId === competitionId)
       .sort((a, b) => a.date.localeCompare(b.date));
 
-  const submit = () => {
+  const submit = async () => {
     const nextErrors: Record<string, string> = {};
     if (!values.name.trim()) nextErrors.name = 'Informe o nome do campeonato.';
     if (!values.organizer.trim()) nextErrors.organizer = 'Informe a organização responsável.';
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) return false;
-    setValues(emptyForm);
-    return true;
+
+    const ok = await runSubmit(
+      async () => {
+        await competitionsRepo.create({
+          name: values.name,
+          season: values.season,
+          organizer: values.organizer,
+          teamId: values.teamId || null,
+          status: values.status,
+          format: values.format,
+          notes: values.notes,
+        });
+        reload();
+      },
+      setErrors,
+      toast,
+    );
+    if (ok) setValues(emptyForm);
+    return ok;
   };
 
   return (
@@ -71,7 +92,7 @@ export default function CompetitionsPage() {
           searchPlaceholder="Buscar campeonato…"
           filters={[
             { key: 'status', label: 'Status', options: STATUSES.map((value) => ({ value, label: value })) },
-            { key: 'team', label: 'Equipe', options: TEAMS.map((team) => ({ value: team, label: team })) },
+            { key: 'team', label: 'Equipe', options: teams.map((team) => ({ value: team.name, label: team.name })) },
           ]}
           values={table.filters}
           onFilter={table.setFilter}
@@ -229,9 +250,10 @@ export default function CompetitionsPage() {
             {({ id }) => (
               <Select
                 id={id}
-                value={values.team}
-                onChange={(e) => setValues({ ...values, team: e.target.value })}
-                options={TEAMS.map((team) => ({ value: team, label: team }))}
+                value={values.teamId}
+                placeholder="Selecione a categoria"
+                onChange={(e) => setValues({ ...values, teamId: e.target.value })}
+                options={teams.map((team) => ({ value: team.id, label: team.name }))}
               />
             )}
           </Field>
