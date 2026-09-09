@@ -8,7 +8,7 @@
  * measured from the custom properties the motion engine publishes.
  */
 import { chromium } from 'playwright';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 
 const BASE = process.env.UI_BASE ?? 'http://127.0.0.1:8787';
 const SHOTS = process.env.SHOTS ?? '/tmp/mascot';
@@ -52,11 +52,21 @@ const readPose = (page) =>
     };
   });
 
+/** A real, minimal GLB — the model path is exercised, not simulated. */
+const MODEL = readFileSync(new URL('./fixtures/minimal-model.glb', import.meta.url));
+
 const browser = await chromium.launch({
   executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome',
 });
 
-async function openContext({ width, height, reducedMotion = false, blockWebGL = false } = {}) {
+async function openContext({
+  width,
+  height,
+  reducedMotion = false,
+  blockWebGL = false,
+  /** 'granted' | 'denied' installs an iOS-style permission gate before load. */
+  orientationPermission = null,
+} = {}) {
   const context = await browser.newContext({
     viewport: { width, height },
     isMobile: width < 700,
@@ -73,6 +83,13 @@ async function openContext({ width, height, reducedMotion = false, blockWebGL = 
       };
     });
   }
+  if (orientationPermission) {
+    await context.addInitScript((outcome) => {
+      // What Safari on iOS does: the sensor exists but stays shut until a
+      // gesture asks for it.
+      window.DeviceOrientationEvent.requestPermission = () => Promise.resolve(outcome);
+    }, orientationPermission);
+  }
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -80,6 +97,22 @@ async function openContext({ width, height, reducedMotion = false, blockWebGL = 
   page.on('request', (request) => requests.push(request.url()));
   return { context, page, errors, requests };
 }
+
+/** Serves the fixture at the model path, so `Mascot3D` finds a real GLB. */
+const serveModel = (page) =>
+  page.route('**/models/juventus-mascot.glb', (route) =>
+    route.fulfill({ status: 200, contentType: 'model/gltf-binary', body: MODEL }),
+  );
+
+/** Feeds one device-orientation reading, the way a handset would. */
+const tilt = (page, beta, gamma) =>
+  page.evaluate(
+    ([b, g]) =>
+      window.dispatchEvent(
+        Object.assign(new Event('deviceorientation'), { alpha: 0, beta: b, gamma: g }),
+      ),
+    [beta, gamma],
+  );
 
 // ---------------------------------------------------------------- preparation
 
@@ -278,6 +311,63 @@ console.log('\n== WebGL indisponível ==');
   await context.close();
 }
 
+// ----------------------------------------------------------- GLB disponível
+
+console.log('\n== GLB disponível ==');
+{
+  const { context, page, errors, requests } = await openContext({ width: 1440, height: 900 });
+  await serveModel(page);
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(3000);
+
+  const mascot = page.locator('[data-mascot="home"]');
+  check(
+    'camada 3D é baixada quando o modelo existe',
+    requests.some((url) => /MascotScene/i.test(url)),
+  );
+  check('mascote passa para o modo modelo', (await mascot.getAttribute('data-mascot-mode')) === 'model');
+  check('cena WebGL é montada', (await page.locator('[data-mascot="home"] canvas').count()) === 1);
+  check('GLB válido não gera erro', errors.length === 0, errors.join(' | '));
+  check(
+    'palco continua sem receber ponteiro com o modelo',
+    (await page.locator('[data-mascot-stage]').first().evaluate((el) => getComputedStyle(el).pointerEvents)) ===
+      'none',
+  );
+
+  // The same engine has to drive the mesh: the pose is published either way.
+  await page.mouse.move(200, 700);
+  await page.waitForTimeout(1200);
+  const left = await readPose(page);
+  await page.mouse.move(1380, 120);
+  await page.waitForTimeout(1200);
+  const right = await readPose(page);
+  check('modelo responde ao mouse pelo mesmo motor', deg(left.ry) < deg(right.ry), `${left.ry} → ${right.ry}`);
+  check(
+    `modelo respeita o limite de ${ROTATION_LIMIT}°`,
+    Math.abs(deg(right.ry)) <= ROTATION_LIMIT && Math.abs(deg(right.rx)) <= ROTATION_LIMIT,
+  );
+
+  console.log('\n== contexto WebGL perdido ==');
+  await page.evaluate(() => {
+    const canvas = document.querySelector('[data-mascot="home"] canvas');
+    const context = canvas.getContext('webgl2') ?? canvas.getContext('webgl');
+    // The extension is how a driver reset is reproduced from script.
+    const lose = context?.getExtension('WEBGL_lose_context');
+    if (lose) lose.loseContext();
+    else canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+  });
+  await page.waitForTimeout(1500);
+
+  check(
+    'perda de contexto volta para a composição estática',
+    (await mascot.getAttribute('data-mascot-mode')) === 'still',
+  );
+  check('composição estática reaparece após a perda', await page.locator('[data-mascot] img').first().isVisible());
+  check('perda de contexto não quebra a página', await page.getByRole('heading', { level: 1 }).isVisible());
+  check('perda de contexto não deixa erro', errors.length === 0, errors.join(' | '));
+  await context.close();
+}
+
 // ------------------------------------------------------- GLB presente e inválido
 
 console.log('\n== GLB presente ==');
@@ -312,6 +402,124 @@ console.log('\n== GLB presente ==');
     'GLB inválido não deixa erro na página',
     errors.length === 0,
     errors.join(' | '),
+  );
+  await context.close();
+}
+
+// ------------------------------------------------------------------- sensores
+
+console.log('\n== sensores ==');
+{
+  const { context, page, errors } = await openContext({ width: 390, height: 844 });
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1500);
+
+  check(
+    'sem pedido de permissão o controle não aparece',
+    (await page.getByRole('button', { name: /Ativar movimento/i }).count()) === 0,
+  );
+
+  // The first reading is what "level" means for this visitor.
+  await tilt(page, 0, 0);
+  await page.waitForTimeout(900);
+  const neutral = await readPose(page);
+  await tilt(page, 0, 22);
+  await page.waitForTimeout(1200);
+  const right = await readPose(page);
+  await tilt(page, 0, -22);
+  await page.waitForTimeout(1200);
+  const left = await readPose(page);
+
+  check('mascote reage à inclinação do aparelho', deg(right.ry) !== deg(left.ry), `${left.ry} vs ${right.ry}`);
+  check('inclinação acompanha o lado do aparelho', deg(left.ry) < deg(right.ry));
+  check(
+    'a primeira leitura vira o repouso',
+    Math.abs(deg(neutral.ry)) < 1,
+    neutral.ry,
+  );
+  check(
+    `sensor respeita o limite de ${ROTATION_LIMIT}°`,
+    Math.abs(deg(right.ry)) <= ROTATION_LIMIT && Math.abs(deg(left.ry)) <= ROTATION_LIMIT,
+  );
+
+  await tilt(page, 12, 0);
+  await page.waitForTimeout(1200);
+  const forward = await readPose(page);
+  check('inclinação frente/trás move o eixo vertical', deg(forward.rx) !== deg(neutral.rx), forward.rx);
+  check('sensores sem erros', errors.length === 0, errors.join(' | '));
+  await context.close();
+}
+
+console.log('\n== permissão de sensor ==');
+{
+  const { context, page, errors } = await openContext({
+    width: 390,
+    height: 844,
+    orientationPermission: 'granted',
+  });
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1200);
+
+  const chip = page.getByRole('button', { name: /Ativar movimento/i });
+  check('permissão exigida oferece um controle discreto', await chip.isVisible());
+
+  // Before the gesture the sensor must be inert. The idle breathing is ±0.5°,
+  // so anything under a degree means nothing but the drift is moving.
+  await tilt(page, 0, 25);
+  await page.waitForTimeout(1200);
+  check(
+    'sensor fica inerte antes do gesto',
+    Math.abs(deg((await readPose(page)).ry)) < 1.2,
+    (await readPose(page)).ry,
+  );
+  // The control is the one thing inside the mascot that takes a click.
+  await chip.click();
+  await page.waitForTimeout(800);
+  check('controle some depois de concedida', (await chip.count()) === 0);
+
+  await tilt(page, 0, 0);
+  await page.waitForTimeout(700);
+  await tilt(page, 0, 22);
+  await page.waitForTimeout(1200);
+  check('sensor passa a mover o mascote após a permissão', Math.abs(deg((await readPose(page)).ry)) > 2);
+  check('permissão concedida sem erros', errors.length === 0, errors.join(' | '));
+  await context.close();
+}
+
+{
+  const { context, page, errors } = await openContext({
+    width: 390,
+    height: 844,
+    orientationPermission: 'denied',
+  });
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1200);
+
+  const chip = page.getByRole('button', { name: /Ativar movimento/i });
+  check('recusa também parte de um controle', await chip.isVisible());
+  await chip.click();
+  await page.waitForTimeout(800);
+  check('recusa não insiste', (await chip.count()) === 0);
+  check('recusa mantém o mascote visível', await page.locator('[data-mascot] img').first().isVisible());
+  check('recusa mantém a página utilizável', await page.getByRole('heading', { level: 1 }).isVisible());
+  await tilt(page, 0, 25);
+  await page.waitForTimeout(1200);
+  check(
+    'sem permissão o mascote fica no repouso',
+    Math.abs(deg((await readPose(page)).ry)) < 1.2,
+    (await readPose(page)).ry,
+  );
+  check('recusa sem erros', errors.length === 0, errors.join(' | '));
+  await context.close();
+}
+
+{
+  const { context, page } = await openContext({ width: 1440, height: 900 });
+  await page.goto(BASE, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1000);
+  check(
+    'no desktop o controle de sensor não é oferecido',
+    (await page.getByRole('button', { name: /Ativar movimento/i }).count()) === 0,
   );
   await context.close();
 }

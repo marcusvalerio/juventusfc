@@ -41,12 +41,14 @@ export function Mascot3D({
   const { stageRef, engine, sensors } = useMascotMotion({ variant, state, intensity, reducedMotion });
   const [mode, setMode] = useState<MascotRenderMode>('still');
   const [lowPower] = useState(isLowPowerDevice);
+  // Once the 3D layer has failed on this device, it does not get another turn.
+  const [degraded, setDegraded] = useState(false);
 
   // Nothing about the 3D stack is fetched until the model is known to exist and
   // the device is a plausible host for it. A page that never gets past this
   // effect costs exactly one HEAD request.
   useEffect(() => {
-    if (reducedMotion || prefersDataSaving() || !hasWebGL()) {
+    if (degraded || reducedMotion || prefersDataSaving() || !hasWebGL()) {
       setMode('still');
       return;
     }
@@ -57,10 +59,13 @@ export function Mascot3D({
     return () => {
       active = false;
     };
-  }, [reducedMotion]);
+  }, [degraded, reducedMotion]);
 
   const still = <MascotStill priority={priority} />;
-  const downgrade = useCallback(() => setMode('still'), []);
+  const downgrade = useCallback(() => {
+    setDegraded(true);
+    setMode('still');
+  }, []);
 
   return (
     <div
@@ -77,7 +82,7 @@ export function Mascot3D({
         {mode === 'model' ? (
           <MascotBoundary fallback={still} onError={downgrade}>
             <Suspense fallback={still}>
-              <MascotScene engine={engine} lowPower={lowPower} />
+              <MascotScene engine={engine} lowPower={lowPower} onContextLost={downgrade} />
             </Suspense>
           </MascotBoundary>
         ) : (

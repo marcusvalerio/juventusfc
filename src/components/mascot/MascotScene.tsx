@@ -96,9 +96,12 @@ function Lighting({ shadows }: { shadows: boolean }) {
 export default function MascotScene({
   engine,
   lowPower = false,
+  onContextLost,
 }: {
   engine: MascotEngine;
   lowPower?: boolean;
+  /** Raised when the driver takes the GPU context away — the caller falls back. */
+  onContextLost?: () => void;
 }) {
   const [frameloop, setFrameloop] = useState<'always' | 'never'>('always');
 
@@ -117,6 +120,19 @@ export default function MascotScene({
       camera={{ position: [0, 0.1, 6.2], fov: 30 }}
       gl={{ antialias: !lowPower, alpha: true, powerPreference: 'high-performance' }}
       style={{ width: '100%', height: '100%' }}
+      onCreated={({ gl }) => {
+        // A lost context leaves a blank canvas behind, which is exactly the
+        // empty frame this layer must never show: hand the stage back to the
+        // still composition instead of trying to restore.
+        gl.domElement.addEventListener(
+          'webglcontextlost',
+          (event) => {
+            event.preventDefault();
+            onContextLost?.();
+          },
+          { once: true },
+        );
+      }}
     >
       <Lighting shadows={!lowPower} />
       <Suspense fallback={null}>
