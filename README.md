@@ -22,6 +22,7 @@ sessões, autorizações granulares, onboarding e exportação em Excel.
 - [Onboarding](#onboarding)
 - [Exportação Excel](#exportação-excel)
 - [Mascote](#mascote)
+- [Identidade e PWA](#identidade-e-pwa)
 - [Testes](#testes)
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Decisões relevantes](#decisões-relevantes)
@@ -455,6 +456,32 @@ O mascote é decoração e nada depende dele. O palco é `aria-hidden`, a arte t
 `alt` vazio, nada dentro dele recebe foco e a árvore inteira é
 `pointer-events: none` — só o controle de sensores volta a receber ponteiro.
 
+## Identidade e PWA
+
+O ícone oficial do clube — o gorila coroado com o monograma JI — vive em
+`public/icons/`. A arte é a fornecida pelo clube; as variantes são apenas
+redimensionamentos do mesmo quadrado, sem recorte de conteúdo, borda, texto ou
+alteração de cor.
+
+| Arquivo | Uso |
+| --- | --- |
+| `favicon.ico` (16/32/48) | Aba, favoritos e navegadores antigos |
+| `icon-16.png`, `icon-32.png`, `icon-48.png` | Favicon em PNG |
+| `apple-touch-icon.png` (180×180) | Atalho na tela inicial do iPhone e iPad |
+| `icon-192.png`, `icon-512.png` | Instalação do PWA |
+| `icon-maskable-192.png`, `icon-maskable-512.png` | Android, que recorta o ícone |
+
+As versões `apple-touch` e `maskable` são achatadas sobre o ONYX `#08090B`
+porque o iOS ignora transparência e o Android recorta o quadrado até um círculo;
+nas maskable a arte é recuada para a zona segura, que é o que evita perder a
+coroa no recorte. As demais preservam os cantos transparentes da arte original.
+
+`public/manifest.webmanifest` declara nome, ícones, `display: standalone`,
+escopo `/` e as cores da identidade (`theme_color` e `background_color` em
+ONYX). `index.html` referencia o manifest, os favicons, o apple-touch-icon e as
+metas de aplicativo — nenhum comportamento da aplicação muda: instalada, ela é a
+mesma plataforma em tela cheia.
+
 ## Testes
 
 ```bash
@@ -492,21 +519,23 @@ nem quebra de linha nos badges.
 migrations/            schema versionado do D1
 worker/src/
   index.ts             roteamento e entrega da SPA
-  lib/                 sessão, senha, permissões, validação, erros, xlsx
+  lib/                 sessão, senha, permissões, validação, erros, xlsx, e-mail
   routes/              um arquivo por domínio da API
 src/
   app/                 rotas, guards, contexto de sessão, navegação
   components/          design system, gráficos, tabelas, motion
   layouts/             shell da aplicação
-  pages/               uma página por rota
+  pages/               uma página por rota (inclui auth/ com a recuperação)
   modules/             composições reaproveitadas entre páginas
   components/mascot/   mascote: motor de movimento, palco, camada 3D, fallback
   services/            cliente HTTP e repositórios por recurso
   shared/              catálogo de permissões (Worker + SPA)
   types/               modelo de domínio
+public/icons/          ícone oficial: favicon, apple-touch e PWA
 public/mascot/         arte do mascote usada pela composição estática
 public/models/         onde o GLB do mascote deve ser publicado
-tests/                 end-to-end de API, de interface e do mascote
+public/manifest.webmanifest
+tests/                 end-to-end de API, interface, mascote e recuperação
 wrangler.jsonc         Worker, D1 e assets (Cloudflare)
 vercel.json            build, fallback de SPA e reescrita de /api (Vercel)
 ```
