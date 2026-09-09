@@ -3,12 +3,12 @@
  *
  * PBKDF2-HMAC-SHA256 via WebCrypto — bcrypt/scrypt/argon2 need native or WASM
  * builds that Workers cannot load, while a bare SHA-256 would be unsalted and
- * far too cheap to brute force. Iterations follow the OWASP recommendation and
- * are stored inside the hash string, so the cost can be raised later and old
- * hashes still verify.
+ * far too cheap to brute force. Cloudflare Workers currently supports up to
+ * 100,000 PBKDF2 iterations, so the cost is kept at that supported ceiling and
+ * stored inside the hash string for future migration/versioning.
  */
 
-const ITERATIONS = 210_000;
+const ITERATIONS = 100_000;
 const KEY_BITS = 256;
 const SALT_BYTES = 16;
 
@@ -53,7 +53,7 @@ export async function verifyPassword(password: string, stored: string): Promise<
   if (parts.length !== 5 || parts[0] !== 'pbkdf2' || parts[1] !== 'sha256') return false;
 
   const iterations = Number(parts[2]);
-  if (!Number.isInteger(iterations) || iterations < 1000) return false;
+  if (!Number.isInteger(iterations) || iterations < 1000 || iterations > 100_000) return false;
 
   try {
     const salt = fromBase64(parts[3]);
