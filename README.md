@@ -23,6 +23,7 @@ sessões, autorizações granulares, onboarding e exportação em Excel.
 - [Exportação Excel](#exportação-excel)
 - [Mascote](#mascote)
 - [Identidade e PWA](#identidade-e-pwa)
+- [Recuperação de senha](#recuperação-de-senha)
 - [Testes](#testes)
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Decisões relevantes](#decisões-relevantes)
@@ -481,6 +482,78 @@ escopo `/` e as cores da identidade (`theme_color` e `background_color` em
 ONYX). `index.html` referencia o manifest, os favicons, o apple-touch-icon e as
 metas de aplicativo — nenhum comportamento da aplicação muda: instalada, ela é a
 mesma plataforma em tela cheia.
+
+## Recuperação de senha
+
+O "Esqueceu a senha?" do login é um fluxo completo, não um aviso.
+
+```
+/entrar → /esqueci-senha        POST /api/auth/forgot-password
+                                    ↓ token de 256 bits, hash no banco
+                                  e-mail com o link
+/redefinir-senha?token=…        POST /api/auth/reset-password/check
+                                POST /api/auth/reset-password
+                                    ↓ nova senha, token gasto,
+                                      sessões da conta revogadas
+/entrar
+```
+
+O e-mail é procurado em `people.email` — a conta não guarda endereço próprio, o
+vínculo é com a pessoa.
+
+### Endpoints
+
+| Método | Rota | Autorização |
+| --- | --- | --- |
+| POST | `/api/auth/forgot-password` | pública — sempre responde igual |
+| POST | `/api/auth/reset-password/check` | pública — diz se o próprio link ainda vale |
+| POST | `/api/auth/reset-password` | pública — aplica a nova senha |
+
+### O que o fluxo garante
+
+- **Resposta única.** `forgot-password` devolve sempre `200` com a mesma
+  mensagem, para endereço existente, inexistente ou no limite de tentativas. Um
+  token é gerado e hasheado nos dois caminhos, então o trabalho feito é
+  equivalente.
+- **Token.** 32 bytes de `crypto.getRandomValues`. Só o SHA-256 vai para
+  `password_resets`, como já acontece com o cookie de sessão — ler a tabela não
+  produz um link utilizável. Vale 30 minutos, serve uma vez, e uma nova
+  solicitação invalida as anteriores da mesma conta.
+- **Ordem da validação.** A política de senha é conferida antes de o token ser
+  tocado, então um erro de digitação não queima o link.
+- **Sessões.** Uma redefinição bem-sucedida revoga todas as sessões daquela
+  conta — e só daquela. A nova senha entra imediatamente.
+- **Limite.** Cinco solicitações por conta por hora, contadas no banco, não na
+  memória do Worker. Estourar o limite não muda a resposta: apenas não gera
+  outro e-mail.
+- **Nada nos logs.** Token, senha e endereço não são registrados em log nem
+  devolvidos pela API.
+
+### E-mail
+
+Não existe provedor configurado nesta instalação, e inventar um significaria
+inventar credenciais. O que existe é a costura: `worker/src/lib/mailer.ts`
+define `Mailer`, e `sendMail` registra toda tentativa em `mail_outbox`.
+
+| Provedor | Quando | O que faz |
+| --- | --- | --- |
+| `nao-configurado` | padrão | Registra `sem_provedor`; nada é entregue |
+| `captura-dev` | `MAIL_PROVIDER=capture` fora de produção | Guarda a mensagem em `mail_outbox` |
+
+O `captura-dev` é um sink de desenvolvimento, na linha do Mailpit: ele grava o
+link em texto para o fluxo poder ser exercitado localmente, recusa rodar quando
+`ENVIRONMENT` é `production` e não tem nenhuma superfície HTTP — lê-lo significa
+consultar o banco local. É o que a suíte de testes usa como caixa de entrada.
+
+Para ligar um provedor real basta uma implementação de `Mailer` e a variável que
+a seleciona; nada acima de `sendMail` muda. **Enquanto isso não existir, o link
+de redefinição é criado e não sai** — essa é a única parte do fluxo que depende
+de configuração externa.
+
+`APP_ORIGIN` precisa apontar para o domínio público: atrás da reescrita da
+Vercel o Worker só enxerga o próprio host, e o link sairia apontando para o
+lugar errado. O cabeçalho `Origin` da requisição não é usado — ele é controlado
+por quem chama e viraria um jeito de sequestrar o token.
 
 ## Testes
 

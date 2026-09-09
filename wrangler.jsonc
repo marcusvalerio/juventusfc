@@ -26,12 +26,22 @@
   ],
 
   "vars": {
-    "ENVIRONMENT": "development"
+    "ENVIRONMENT": "development",
+    // Development mail sink: the reset message is stored in `mail_outbox` so the
+    // flow can be exercised locally. Refused outside development, and never
+    // reachable over HTTP — read it with `wrangler d1 execute`.
+    "MAIL_PROVIDER": "capture",
+    // Empty falls back to the origin the Worker was reached on.
+    "APP_ORIGIN": ""
   },
 
   "env": {
     "production": {
-      "vars": { "ENVIRONMENT": "production" },
+      // APP_ORIGIN must carry the public domain: behind the Vercel rewrite the
+      // Worker only ever sees its own hostname, and a reset link built from that
+      // would point at the wrong host. MAIL_PROVIDER stays unset until a real
+      // provider exists — resets are recorded and nothing is delivered.
+      "vars": { "ENVIRONMENT": "production", "APP_ORIGIN": "" },
       "assets": {
         "directory": "./dist",
         "not_found_handling": "single-page-application",

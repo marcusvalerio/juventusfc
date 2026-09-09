@@ -4,6 +4,7 @@ import { ApiError, errorResponse, notFound } from './lib/errors';
 import { noStore, requireSession } from './lib/middleware';
 import { SESSION_COOKIE, readCookie, resolveSession } from './lib/session';
 import auth from './routes/auth';
+import passwordReset from './routes/passwordReset';
 import onboarding, { clubCount } from './routes/onboarding';
 import club from './routes/club';
 import people from './routes/people';
@@ -65,6 +66,8 @@ app.get('/api/bootstrap', async (c) => {
 });
 
 app.route('/api/auth', auth);
+// Public by necessity: someone who cannot sign in is the whole point.
+app.route('/api/auth', passwordReset);
 app.route('/api/onboarding', onboarding);
 
 // Everything below requires a valid session; each route additionally checks its
