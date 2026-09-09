@@ -21,6 +21,7 @@ sessões, autorizações granulares, onboarding e exportação em Excel.
 - [Autorizações](#autorizações)
 - [Onboarding](#onboarding)
 - [Exportação Excel](#exportação-excel)
+- [Mascote](#mascote)
 - [Testes](#testes)
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Decisões relevantes](#decisões-relevantes)
@@ -50,6 +51,7 @@ no schema.
 | Camada | Escolha |
 | --- | --- |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS, Framer Motion |
+| 3D | Three.js, React Three Fiber e drei — carregados sob demanda |
 | API | Cloudflare Workers + Hono |
 | Validação | Zod (server-side, sempre) |
 | Banco | Cloudflare D1 (SQLite) |
@@ -377,6 +379,82 @@ Worker ou dependem de APIs do Node ou carregam vulnerabilidades de parser que
 nunca usaríamos — este código apenas escreve. Valores monetários saem como número
 com formato de moeda, não como texto.
 
+## Mascote
+
+O mascote do clube aparece no portal e na tela de acesso através de um único
+componente, `Mascot3D`, em `src/components/mascot/`.
+
+```
+Mascot3D            decide o que renderizar e contém as falhas
+  MascotStage       palco: luz, sombra de contato, entrada
+    MascotStill     composição estática (webp/png)
+    MascotScene     camada WebGL — React Three Fiber + drei, carregada sob demanda
+  useMascotMotion   liga mouse, sensores e visibilidade ao motor
+  mascotMotion      motor: amortecimento, pose, publicação em CSS custom properties
+```
+
+Uso:
+
+```tsx
+<Mascot3D variant="home" state="idle" intensity={1} priority />
+<Mascot3D variant="login" state="login" intensity={0.5} />
+```
+
+`variant` define o orçamento de movimento (`home`, `login`, `compact`), `state`
+inclina a pose de repouso (`idle`, `focus`, `login`, `success`, `victory`) e
+`intensity` multiplica o conjunto. O tamanho vem do contêiner: o componente
+ocupa `100%` da caixa que o envolve.
+
+### Movimento
+
+Um único motor alimenta as duas camadas. A cada quadro ele amortece a entrada e
+publica a pose como custom properties (`--mascot-rx`, `--mascot-ry`,
+`--mascot-tx`, `--mascot-ty`, `--mascot-scale`) no elemento do palco; cada camada
+lê essas propriedades multiplicadas pela própria profundidade, o que produz
+paralaxe com uma escrita de estilo por quadro. A cena WebGL lê a mesma pose
+dentro do seu laço de render, então trocar de camada não muda o comportamento.
+
+- **Mouse** (ponteiro fino): a posição no viewport vira alvo normalizado; a
+  rotação fica entre 3° e 6° e o amortecimento é independente da taxa de
+  quadros. Parado o cursor por 2,2 s, a figura volta sozinha ao repouso.
+- **Celular** (ponteiro grosso): `deviceorientation`, com o ângulo em que o
+  aparelho estava ao começar servindo de neutro e troca de eixos em paisagem. No
+  iOS a permissão exige gesto, então o componente oferece um controle discreto
+  em vez de pedir sozinho; recusar não tem custo e o pedido não volta na sessão.
+- O laço para quando a figura assenta, quando a aba fica oculta e quando o
+  mascote sai da viewport.
+
+### Camadas e degradação
+
+`Mascot3D` começa sempre na composição estática e só sobe para o modelo quando
+todas as condições existem. Cada porta abaixo cai para a estática, nunca para um
+espaço vazio:
+
+| Situação | Resultado |
+| --- | --- |
+| Sem `juventus-mascot.glb` | Composição estática; o Three.js não é baixado |
+| Sem WebGL | Composição estática |
+| `prefers-reduced-motion` | Composição estática e imóvel, sem laço de quadros |
+| Modo de economia de dados | Composição estática |
+| GLB inválido ou contexto perdido | Volta para a composição estática |
+| Sem sensor, ou permissão negada | Segue no repouso e no mouse quando houver |
+
+A verificação do modelo é um `HEAD`: como os dois hosts respondem caminhos
+inexistentes com o `index.html` da SPA, o que decide é o `content-type`, não o
+status.
+
+### Publicar o modelo
+
+Coloque o arquivo em `public/models/juventus-mascot.glb` — veja
+`public/models/README.md` para o que a cena espera dele. Não há sinalizador para
+ligar: o componente encontra o arquivo sozinho no próximo carregamento.
+
+### Acessibilidade
+
+O mascote é decoração e nada depende dele. O palco é `aria-hidden`, a arte tem
+`alt` vazio, nada dentro dele recebe foco e a árvore inteira é
+`pointer-events: none` — só o controle de sensores volta a receber ponteiro.
+
 ## Testes
 
 ```bash
@@ -422,10 +500,13 @@ src/
   layouts/             shell da aplicação
   pages/               uma página por rota
   modules/             composições reaproveitadas entre páginas
+  components/mascot/   mascote: motor de movimento, palco, camada 3D, fallback
   services/            cliente HTTP e repositórios por recurso
   shared/              catálogo de permissões (Worker + SPA)
   types/               modelo de domínio
-tests/                 end-to-end de API e de interface
+public/mascot/         arte do mascote usada pela composição estática
+public/models/         onde o GLB do mascote deve ser publicado
+tests/                 end-to-end de API, de interface e do mascote
 wrangler.jsonc         Worker, D1 e assets (Cloudflare)
 vercel.json            build, fallback de SPA e reescrita de /api (Vercel)
 ```

@@ -89,6 +89,7 @@ export default function LoginPage() {
       eyebrow="Acesso à plataforma"
       title={publicClub?.shortName ?? 'Entrar'}
       backdrop={backdrop}
+      mascot="login"
       footer={
         <Link to="/" className="text-2xs text-ink-faint transition-colors hover:text-gold">
           Voltar ao portal

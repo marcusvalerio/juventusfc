@@ -1,6 +1,6 @@
 # Testes
 
-Ambos os testes rodam contra o Worker e o banco D1 reais — não há mock nem stub.
+Todos os roteiros rodam contra o Worker e o banco D1 reais — não há mock nem stub.
 
 ## Preparação
 
@@ -16,9 +16,16 @@ npx wrangler dev --port 8787 --local
 ## Execução
 
 ```bash
-npm run test:api        # API end-to-end (64 verificações)
-node tests/ui.e2e.mjs   # jornada pela interface com Playwright
+npm run test:api            # API end-to-end (68 verificações)
+npm run test:ui             # jornada pela interface com Playwright (31)
+npm run test:first-access   # fluxo de primeiro acesso, casos A–G (38)
+npm run test:mascot         # mascote: movimento, fallbacks e acessibilidade (42)
 ```
+
+O roteiro do mascote cobre a Home e o Login em desktop e mobile, o limite de
+rotação e o retorno ao repouso, `prefers-reduced-motion`, ausência de WebGL,
+ausência de GLB (nenhum chunk 3D é baixado), um GLB inválido caindo para a
+composição estática, navegação por teclado e o login real.
 
 Variáveis opcionais: `API_BASE`, `UI_BASE` (padrão `http://127.0.0.1:8787`) e
 `SHOTS` (diretório das capturas de tela do teste de UI).
