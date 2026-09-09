@@ -179,12 +179,65 @@ deploy. Use bancos D1 distintos para cada um.
 
 ## Deploy
 
+O frontend fica na **Vercel** e a API no **Cloudflare Worker** com o banco D1.
+O navegador nunca fala com o domínio do Worker: a Vercel reescreve `/api/*` para
+ele, então do ponto de vista do browser tudo é mesma origem. Isso preserva o
+cookie de sessão `HttpOnly; SameSite=Lax; Secure` sem afrouxar nada e dispensa
+CORS por completo.
+
+```
+navegador ──► juventusfc.vercel.app ──┬── /            arquivos estáticos (dist/)
+                                      └── /api/*  ───► Worker ──► D1
+                                            rewrite da Vercel
+```
+
+### 1. Cloudflare (Worker + D1)
+
+Siga [Configuração no Cloudflare](#configuração-no-cloudflare) para criar o banco
+e preencher o `database_id`, aplique as migrations remotas e publique:
+
 ```bash
+npm run db:migrate:remote
 npm run deploy
 ```
 
-Faz o build e publica o Worker com os assets. Depois de qualquer alteração de
-schema, rode `npm run db:migrate:remote` antes.
+O `deploy` usa `--env production`, então o Worker publicado se chama
+`juventusfc-production` e a URL sai no fim do comando, no formato
+`https://juventusfc-production.<subdominio-da-conta>.workers.dev`.
+
+### 2. Vercel (frontend + proxy)
+
+`vercel.json` já traz o build (`npm run build` → `dist/`), o fallback de SPA e a
+reescrita da API. **Substitua o host de exemplo** em `rewrites[0].destination`
+pela URL real impressa no passo anterior:
+
+```json
+{
+  "source": "/api/:path*",
+  "destination": "https://juventusfc-production.<subdominio-da-conta>.workers.dev/api/:path*"
+}
+```
+
+A Vercel não interpola variáveis de ambiente em `destination`, então o host
+precisa ser literal. Trocar de Worker significa editar esse arquivo e publicar.
+
+Nenhuma variável `VITE_*` é necessária: `src/services/api.ts` chama `/api`
+relativo, com `credentials: 'same-origin'`.
+
+### 3. Conferência
+
+Depois do deploy, pelo domínio da Vercel:
+
+```bash
+curl -i https://<seu-dominio>.vercel.app/api/bootstrap
+```
+
+Deve responder JSON com `Cache-Control: no-store` — se vier HTML, a reescrita
+não está ativa. Após o login, o cookie `jfc_session` precisa aparecer no domínio
+da Vercel com `HttpOnly` e `Secure`.
+
+Depois de qualquer alteração de schema, rode `npm run db:migrate:remote` antes do
+`npm run deploy`.
 
 ## API
 
@@ -373,6 +426,8 @@ src/
   shared/              catálogo de permissões (Worker + SPA)
   types/               modelo de domínio
 tests/                 end-to-end de API e de interface
+wrangler.jsonc         Worker, D1 e assets (Cloudflare)
+vercel.json            build, fallback de SPA e reescrita de /api (Vercel)
 ```
 
 ## Decisões relevantes
