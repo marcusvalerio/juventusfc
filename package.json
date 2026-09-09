@@ -15,7 +15,9 @@
     "db:reset": "rm -rf .wrangler/state && wrangler d1 migrations apply DB --local",
     "db:studio": "wrangler d1 execute DB --local --command",
     "test:api": "node tests/api.e2e.mjs",
-    "deploy": "npm run build && wrangler deploy --env production"
+    "deploy": "npm run build && wrangler deploy --env production",
+    "test:ui": "node tests/ui.e2e.mjs",
+    "test:first-access": "node tests/first-access.e2e.mjs"
   },
   "dependencies": {
     "framer-motion": "^11.11.17",

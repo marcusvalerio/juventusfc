@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
 import { DUR, EASE } from '@/lib/motion';
@@ -13,6 +13,11 @@ import { useSession } from '@/app/SessionContext';
 export default function HomePage() {
   const { publicClub, needsOnboarding, account } = useSession();
 
+  // On an unconfigured instance the portal has nothing to show and no way in,
+  // so the root sends the visitor straight to first access. Once the club
+  // exists the portal stays as it is — that case was never broken.
+  if (needsOnboarding) return <Navigate to="/onboarding" replace />;
+
   const clubName = publicClub?.shortName ?? 'O clube';
   const backdrop = (publicClub?.shortName ?? 'CLUBE').split(' ')[0].toUpperCase();
   const location = [publicClub?.city, publicClub?.state].filter(Boolean).join(', ');
@@ -24,12 +29,8 @@ export default function HomePage() {
     publicClub?.venue ? { label: 'Praça', value: publicClub.venue } : null,
   ].filter(Boolean) as { label: string; value: string }[];
 
-  const entryHref = needsOnboarding ? '/onboarding' : account ? '/app' : '/entrar';
-  const entryLabel = needsOnboarding
-    ? 'Configurar o clube'
-    : account
-      ? 'Entrar na plataforma'
-      : 'Acessar a plataforma';
+  const entryHref = account ? '/app' : '/entrar';
+  const entryLabel = account ? 'Entrar na plataforma' : 'Acessar a plataforma';
 
   return (
     <div className="grain relative flex min-h-screen flex-col overflow-hidden bg-onyx">
@@ -73,7 +74,7 @@ export default function HomePage() {
             to={entryHref}
             className="group inline-flex items-center gap-2 rounded-md border border-line-strong px-3.5 py-2 text-[13px] text-ink-muted transition-colors duration-200 hover:border-line-gold hover:text-ink"
           >
-            {needsOnboarding ? 'Configurar' : 'Acessar'}
+            Acessar
             <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
           </Link>
         </span>

@@ -259,9 +259,41 @@ A conta criada no onboarding é proprietária e detém todas as capacidades.
 
 ## Onboarding
 
-Com o banco vazio, `/api/bootstrap` responde `needsOnboarding: true` e a
-aplicação envia para `/onboarding`. São cinco etapas: identidade do clube,
-estrutura esportiva, financeiro, identidade visual e primeiro administrador.
+### Primeiro acesso
+
+Toda tela pública espera `/api/bootstrap` responder antes de decidir o que
+mostrar. Só então o destino é escolhido:
+
+```
+abertura → GET /api/bootstrap
+              │
+   ┌──────────┼───────────────┬─────────────────┐
+needsOnboarding      autenticado         nem um nem outro
+   │                     │                      │
+/onboarding            /app                 /entrar
+```
+
+- `/` na instalação limpa leva direto ao `/onboarding`; com o clube já criado
+  mantém o portal, cujo botão aponta para `/entrar` ou `/app`.
+- `/entrar` na instalação limpa não mostra formulário de login — não existe
+  conta que pudesse funcionar. Mostra **Primeiro acesso** com o botão
+  *Configurar clube*, e deixa explícito que não há credenciais padrão.
+- `/entrar` num clube já configurado mostra o login normal, com uma nota
+  discreta orientando quem procura primeiro acesso a pedir uma conta à
+  administração. Nunca oferece cadastro.
+- `/onboarding` num clube já configurado mostra **Clube já configurado** e
+  devolve para `/entrar` ou `/app`, em vez de redirecionar em silêncio.
+- Se o bootstrap falhar, a aplicação diz que não conseguiu falar com o
+  servidor e oferece nova tentativa — não trata a falha como falta de
+  configuração nem apresenta um login inútil.
+
+Nenhum usuário ou senha padrão é criado em momento algum: quem configura
+define as próprias credenciais na última etapa.
+
+### Etapas
+
+São cinco: identidade do clube, estrutura esportiva, financeiro, identidade
+visual e primeiro administrador.
 
 Ao concluir, em um único lote são criados o clube, as configurações, as
 categorias, a pessoa do administrador, a conta e suas autorizações — e a sessão
@@ -295,9 +327,10 @@ com formato de moeda, não como texto.
 ## Testes
 
 ```bash
-npm run lint            # typecheck do frontend e do Worker
-npm run test:api        # API end-to-end contra Worker + D1 reais
-node tests/ui.e2e.mjs   # jornada completa pela interface (Playwright)
+npm run lint                # typecheck do frontend e do Worker
+npm run test:api            # API end-to-end contra Worker + D1 reais
+npm run test:first-access   # fluxo de primeiro acesso (casos A–G)
+npm run test:ui             # jornada completa pela interface
 ```
 
 Os testes de UI precisam do Worker rodando (`npm run preview`) e usam o banco
@@ -309,6 +342,13 @@ clube.
 (mensalidade duplicada, saldo negativo de estoque, exclusão de pessoa com
 vínculo), agregações do dashboard, autorizações negadas, exportação e novo login
 com os dados persistidos.
+
+`tests/first-access.e2e.mjs` cobre o primeiro acesso de ponta a ponta: banco
+vazio levando ao onboarding, entrada automática após a configuração, recusa de
+um segundo clube, instância já configurada, login posterior com a senha criada
+e falha de bootstrap. Vários passos atrasam `/api/bootstrap` de propósito,
+porque o defeito que essa suíte protege era justamente telas decidindo o que
+renderizar antes dessa resposta.
 
 `tests/ui.e2e.mjs` percorre a mesma jornada pela interface, verifica estados
 vazios, validação de formulário, o menu filtrado por autorização, o bloqueio ao

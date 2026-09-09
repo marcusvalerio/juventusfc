@@ -1,17 +1,18 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import { ArrowRight, Lock, User } from 'lucide-react';
-import { DUR, EASE } from '@/lib/motion';
-import { Crest } from '@/components/brand/Crest';
+import { ArrowRight, Lock, Sparkles, User } from 'lucide-react';
+import { PublicScreen } from '@/layouts/PublicScreen';
 import { Button } from '@/components/ui/Button';
 import { Field, Input } from '@/components/ui/Field';
 import { useSession } from '@/app/SessionContext';
 import { ApiError } from '@/services/api';
 
 /**
- * Sign-in by username and password. The session lives in an HttpOnly cookie
- * set by the API, so nothing sensitive is kept in the page.
+ * Sign-in by username and password. The session lives in an HttpOnly cookie set
+ * by the API, so nothing sensitive is kept in the page.
+ *
+ * Rendered inside BootstrapGate, so `needsOnboarding` and `account` are already
+ * known here — no branch runs against a value that is merely still unset.
  */
 export default function LoginPage() {
   const { account, needsOnboarding, login, publicClub } = useSession();
@@ -22,10 +23,43 @@ export default function LoginPage() {
   const [error, setError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
 
-  if (needsOnboarding) return <Navigate to="/onboarding" replace />;
   if (account) {
     const target = (location.state as { from?: string } | null)?.from ?? '/app';
     return <Navigate to={target} replace />;
+  }
+
+  const backdrop = (publicClub?.shortName ?? 'Clube').split(' ')[0].toUpperCase();
+
+  /**
+   * No club yet means no account exists that a password could match. Instead of
+   * a login form nobody can use, this offers the only real next step. The
+   * backend is still the authority: it refuses onboarding once a club exists.
+   */
+  if (needsOnboarding) {
+    return (
+      <PublicScreen eyebrow="Primeiro acesso" title="Configure o clube" backdrop="CLUBE">
+        <div className="rounded-lg border border-line bg-graphite p-6">
+          <p className="text-[13px] leading-relaxed text-ink-muted">
+            Esta instalação ainda não foi configurada, então ainda não existe nenhuma conta
+            para entrar. Configure o clube e crie a conta do administrador para começar.
+          </p>
+          <Button
+            variant="primary"
+            size="lg"
+            iconRight={<ArrowRight />}
+            className="mt-6 w-full"
+            onClick={() => navigate('/onboarding')}
+          >
+            Configurar clube
+          </Button>
+        </div>
+        <p className="mt-6 text-center text-2xs leading-relaxed text-ink-ghost">
+          Você define o próprio usuário e senha durante a configuração.
+          <br />
+          Não existem credenciais padrão.
+        </p>
+      </PublicScreen>
+    );
   }
 
   const submit = async (event: FormEvent) => {
@@ -51,86 +85,73 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="grain relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-onyx px-6">
-      <motion.div
-        aria-hidden
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 1.4, ease: EASE }}
-        className="pointer-events-none absolute inset-0 flex items-center justify-center"
-      >
-        <span className="whitespace-nowrap font-display text-[26vw] font-medium leading-none tracking-tightest text-ink opacity-[0.03]">
-          {(publicClub?.shortName ?? 'CLUBE').split(' ')[0].toUpperCase()}
-        </span>
-      </motion.div>
+    <PublicScreen
+      eyebrow="Acesso à plataforma"
+      title={publicClub?.shortName ?? 'Entrar'}
+      backdrop={backdrop}
+      footer={
+        <Link to="/" className="text-2xs text-ink-faint transition-colors hover:text-gold">
+          Voltar ao portal
+        </Link>
+      }
+    >
+      <form onSubmit={submit} className="flex flex-col gap-4 rounded-lg border border-line bg-graphite p-6">
+        <Field label="Usuário">
+          {({ id }) => (
+            <Input
+              id={id}
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              autoComplete="username"
+              autoFocus
+              prefixIcon={<User />}
+              placeholder="seu.usuario"
+              disabled={submitting}
+            />
+          )}
+        </Field>
 
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: DUR.editorial, ease: EASE }}
-        className="relative z-10 w-full max-w-sm"
-      >
-        <div className="mb-8 flex flex-col items-center text-center">
-          <Crest className="mb-6 h-10" />
-          <p className="eyebrow">Acesso à plataforma</p>
-          <h1 className="mt-3 font-display text-3xl font-medium tracking-tightest text-ink">
-            {publicClub?.shortName ?? 'Entrar'}
-          </h1>
-        </div>
+        <Field label="Senha" error={error}>
+          {({ id, invalid }) => (
+            <Input
+              id={id}
+              type="password"
+              invalid={invalid}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              prefixIcon={<Lock />}
+              placeholder="••••••••"
+              disabled={submitting}
+            />
+          )}
+        </Field>
 
-        <form onSubmit={submit} className="flex flex-col gap-4 rounded-lg border border-line bg-graphite p-6">
-          <Field label="Usuário">
-            {({ id }) => (
-              <Input
-                id={id}
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                autoComplete="username"
-                autoFocus
-                prefixIcon={<User />}
-                placeholder="seu.usuario"
-                disabled={submitting}
-              />
-            )}
-          </Field>
+        <Button
+          type="submit"
+          variant="primary"
+          size="lg"
+          loading={submitting}
+          iconRight={<ArrowRight />}
+          className="mt-2 w-full"
+        >
+          Entrar
+        </Button>
+      </form>
 
-          <Field label="Senha" error={error}>
-            {({ id, invalid }) => (
-              <Input
-                id={id}
-                type="password"
-                invalid={invalid}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="current-password"
-                prefixIcon={<Lock />}
-                placeholder="••••••••"
-                disabled={submitting}
-              />
-            )}
-          </Field>
+      <p className="mt-6 text-center text-2xs text-ink-ghost">
+        Esqueceu a senha? Fale com a administração do clube.
+      </p>
 
-          <Button
-            type="submit"
-            variant="primary"
-            size="lg"
-            loading={submitting}
-            iconRight={<ArrowRight />}
-            className="mt-2 w-full"
-          >
-            Entrar
-          </Button>
-        </form>
-
-        <p className="mt-6 text-center text-2xs text-ink-ghost">
-          Esqueceu a senha? Fale com a administração do clube.
+      {/* Discreet pointer for someone who arrived expecting to set the club up.
+          It never offers a sign-up: the instance is already configured. */}
+      <div className="mt-6 flex items-start gap-2.5 rounded-md border border-line bg-surface-sunken px-4 py-3">
+        <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-ghost" aria-hidden />
+        <p className="text-2xs leading-relaxed text-ink-faint">
+          <span className="text-ink-muted">Primeiro acesso?</span> Este clube já está
+          configurado — peça à administração que crie a sua conta em Configurações › Acesso.
         </p>
-        <p className="mt-2 text-center text-2xs">
-          <Link to="/" className="text-ink-faint transition-colors hover:text-gold">
-            Voltar ao portal
-          </Link>
-        </p>
-      </motion.div>
-    </div>
+      </div>
+    </PublicScreen>
   );
 }

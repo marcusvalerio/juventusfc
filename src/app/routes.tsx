@@ -4,6 +4,7 @@ import { AnimatePresence } from 'framer-motion';
 import { AppLayout } from '@/layouts/AppLayout';
 import { RouteFallback } from './RouteFallback';
 import { RequireAuth, RequirePermission } from './guards';
+import { BootstrapGate } from './BootstrapGate';
 
 const HomePage = lazy(() => import('@/pages/HomePage'));
 const LoginPage = lazy(() => import('@/pages/LoginPage'));
@@ -40,9 +41,32 @@ export function AppRoutes() {
     <AnimatePresence mode="wait" initial={false}>
       <Suspense fallback={<RouteFallback />}>
         <Routes location={location} key={location.pathname}>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/entrar" element={<LoginPage />} />
-          <Route path="/onboarding" element={<OnboardingPage />} />
+          {/* Public screens wait for /api/bootstrap before deciding anything,
+              so none of them renders against a state that is merely unknown. */}
+          <Route
+            path="/"
+            element={
+              <BootstrapGate>
+                <HomePage />
+              </BootstrapGate>
+            }
+          />
+          <Route
+            path="/entrar"
+            element={
+              <BootstrapGate>
+                <LoginPage />
+              </BootstrapGate>
+            }
+          />
+          <Route
+            path="/onboarding"
+            element={
+              <BootstrapGate>
+                <OnboardingPage />
+              </BootstrapGate>
+            }
+          />
 
           <Route
             path="/app"

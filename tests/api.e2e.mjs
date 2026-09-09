@@ -93,6 +93,16 @@ res = await call('/api/onboarding', { method: 'POST', body: onboardingPayload })
 check('onboarding cria clube e administrador', res.status === 201, JSON.stringify(res.body));
 check('onboarding devolve sessão autenticada', jar().includes('jfc_session='));
 
+// CASO G — nothing about the credential may travel back to the client.
+const onboardingBody = JSON.stringify(res.body ?? {});
+check('resposta não devolve a senha', !onboardingBody.includes(onboardingPayload.admin.password));
+check('resposta não devolve o hash', !/pbkdf2|password_hash|passwordHash/i.test(onboardingBody));
+
+// The cookie must be unreadable by scripts and scoped safely.
+const rawCookie = res.headers?.get('set-cookie') ?? '';
+check('cookie de sessão é HttpOnly', /HttpOnly/i.test(rawCookie), rawCookie.slice(0, 80));
+check('cookie usa SameSite=Lax', /SameSite=Lax/i.test(rawCookie), rawCookie.slice(0, 80));
+
 res = await call('/api/onboarding', { method: 'POST', body: onboardingPayload });
 check('onboarding não pode rodar duas vezes', res.status === 409, `status ${res.status}`);
 

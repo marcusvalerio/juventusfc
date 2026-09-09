@@ -1,6 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useSession } from './SessionContext';
-import { RouteFallback } from './RouteFallback';
+import { BootstrapGate } from './BootstrapGate';
 import { EmptyState } from '@/components/ui/States';
 import { LinkButton } from '@/components/ui/Button';
 import { ShieldOff } from 'lucide-react';
@@ -13,7 +13,9 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
   const { status, account, needsOnboarding } = useSession();
   const location = useLocation();
 
-  if (status === 'loading') return <RouteFallback />;
+  // A failed bootstrap is not the same as "not signed in": sending the visitor
+  // to the login screen there would blame them for a server problem.
+  if (status !== 'ready') return <BootstrapGate>{null}</BootstrapGate>;
   if (needsOnboarding) return <Navigate to="/onboarding" replace />;
   if (!account) return <Navigate to="/entrar" state={{ from: location.pathname }} replace />;
 

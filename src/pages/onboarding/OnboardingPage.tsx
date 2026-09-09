@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Navigate, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, ArrowRight, Check, Plus, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
@@ -12,6 +12,7 @@ import { useToast } from '@/components/ui/Toast';
 import { useSession } from '@/app/SessionContext';
 import { apiFetch, ApiError } from '@/services/api';
 import { SUGGESTED_TEAMS } from '@/types/domain';
+import { PublicScreen } from '@/layouts/PublicScreen';
 
 const STEPS = [
   { key: 'clube', title: 'Identidade do clube', hint: 'Como o clube se apresenta na plataforma.' },
@@ -72,7 +73,34 @@ export default function OnboardingPage() {
   const progress = ((step + 1) / STEPS.length) * 100;
 
   // Guard placed after every hook, so the hook order never changes between renders.
-  if (!needsOnboarding) return <Navigate to={account ? '/app' : '/entrar'} replace />;
+  // Rendered inside BootstrapGate, so `needsOnboarding` is already known and this
+  // never fires on a clean install that simply had not answered yet.
+  if (!needsOnboarding) {
+    return (
+      <PublicScreen eyebrow="Configuração concluída" title="Clube já configurado">
+        <div className="rounded-lg border border-line bg-graphite p-6 text-center">
+          <p className="text-[13px] leading-relaxed text-ink-muted">
+            Esta instalação já foi configurada e não pode receber um segundo clube.
+            {account
+              ? ' Você já está autenticado.'
+              : ' Entre com a sua conta para continuar.'}
+          </p>
+          <Button
+            variant="primary"
+            size="lg"
+            iconRight={<ArrowRight />}
+            className="mt-6 w-full"
+            onClick={() => navigate(account ? '/app' : '/entrar', { replace: true })}
+          >
+            {account ? 'Ir para a plataforma' : 'Ir para o login'}
+          </Button>
+        </div>
+        <p className="mt-6 text-center text-2xs leading-relaxed text-ink-ghost">
+          Precisa de acesso? Peça à administração que crie a sua conta.
+        </p>
+      </PublicScreen>
+    );
+  }
 
   const set = <K extends keyof Form>(key: K, value: Form[K]) => {
     setForm((current) => ({ ...current, [key]: value }));

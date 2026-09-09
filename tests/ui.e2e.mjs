@@ -31,11 +31,16 @@ page.on('pageerror', (error) => pageErrors.push(error.message));
 const shot = (name) => page.screenshot({ path: `${SHOTS}/${name}.png` });
 
 console.log('\n== portal e onboarding ==');
+// On an unconfigured instance the root leads straight to first access; the
+// editorial portal returns once the club exists (covered in first-access.e2e).
 await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-await page.waitForTimeout(1500);
-check('portal carrega sem clube configurado', await page.getByText('Chega mais').isVisible());
-check('portal convida a configurar', await page.getByRole('link', { name: /Configurar o clube/i }).isVisible());
-await shot('01-portal-vazio');
+await page.waitForTimeout(2000);
+check('raiz leva ao primeiro acesso', new URL(page.url()).pathname === '/onboarding', page.url());
+check(
+  'primeiro acesso apresenta a configuração',
+  (await page.locator('body').innerText()).includes('Identidade do clube'),
+);
+await shot('01-primeiro-acesso');
 
 // A protected route must bounce to onboarding while no club exists.
 await page.goto(`${BASE}/app`, { waitUntil: 'domcontentloaded' });
