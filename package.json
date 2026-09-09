@@ -17,15 +17,20 @@
     "test:api": "node tests/api.e2e.mjs",
     "deploy": "npm run build && wrangler deploy --env production",
     "test:ui": "node tests/ui.e2e.mjs",
-    "test:first-access": "node tests/first-access.e2e.mjs"
+    "test:first-access": "node tests/first-access.e2e.mjs",
+    "test:mascot": "node tests/mascot.e2e.mjs",
+    "test:password-reset": "node tests/password-reset.e2e.mjs"
   },
   "dependencies": {
+    "@react-three/drei": "^9.122.0",
+    "@react-three/fiber": "^8.18.0",
     "framer-motion": "^11.11.17",
     "hono": "^4.13.7",
     "lucide-react": "^0.462.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0",
+    "three": "^0.170.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {

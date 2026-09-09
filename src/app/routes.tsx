@@ -8,6 +8,8 @@ import { BootstrapGate } from './BootstrapGate';
 
 const HomePage = lazy(() => import('@/pages/HomePage'));
 const LoginPage = lazy(() => import('@/pages/LoginPage'));
+const ForgotPasswordPage = lazy(() => import('@/pages/auth/ForgotPasswordPage'));
+const ResetPasswordPage = lazy(() => import('@/pages/auth/ResetPasswordPage'));
 const OnboardingPage = lazy(() => import('@/pages/onboarding/OnboardingPage'));
 const DashboardPage = lazy(() => import('@/pages/DashboardPage'));
 const PeoplePage = lazy(() => import('@/pages/club/PeoplePage'));
@@ -28,6 +30,12 @@ const InventoryPage = lazy(() => import('@/pages/InventoryPage'));
 const ReportsPage = lazy(() => import('@/pages/ReportsPage'));
 const SettingsPage = lazy(() => import('@/pages/SettingsPage'));
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'));
+
+/** Keeps the token when an English reset link is opened. */
+function ResetPasswordAlias() {
+  const { search } = useLocation();
+  return <Navigate to={{ pathname: '/redefinir-senha', search }} replace />;
+}
 
 /** Wraps a section in its capability check. */
 const gated = (permission: string, element: React.ReactNode) => (
@@ -56,6 +64,22 @@ export function AppRoutes() {
             element={
               <BootstrapGate>
                 <LoginPage />
+              </BootstrapGate>
+            }
+          />
+          <Route
+            path="/esqueci-senha"
+            element={
+              <BootstrapGate>
+                <ForgotPasswordPage />
+              </BootstrapGate>
+            }
+          />
+          <Route
+            path="/redefinir-senha"
+            element={
+              <BootstrapGate>
+                <ResetPasswordPage />
               </BootstrapGate>
             }
           />
@@ -98,6 +122,9 @@ export function AppRoutes() {
 
           <Route path="/dashboard" element={<Navigate to="/app" replace />} />
           <Route path="/login" element={<Navigate to="/entrar" replace />} />
+          {/* English aliases, so a link written either way still lands. */}
+          <Route path="/forgot-password" element={<Navigate to="/esqueci-senha" replace />} />
+          <Route path="/reset-password" element={<ResetPasswordAlias />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </Suspense>

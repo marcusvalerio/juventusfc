@@ -21,6 +21,9 @@ sessões, autorizações granulares, onboarding e exportação em Excel.
 - [Autorizações](#autorizações)
 - [Onboarding](#onboarding)
 - [Exportação Excel](#exportação-excel)
+- [Mascote](#mascote)
+- [Identidade e PWA](#identidade-e-pwa)
+- [Recuperação de senha](#recuperação-de-senha)
 - [Testes](#testes)
 - [Estrutura do projeto](#estrutura-do-projeto)
 - [Decisões relevantes](#decisões-relevantes)
@@ -50,6 +53,7 @@ no schema.
 | Camada | Escolha |
 | --- | --- |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS, Framer Motion |
+| 3D | Three.js, React Three Fiber e drei — carregados sob demanda |
 | API | Cloudflare Workers + Hono |
 | Validação | Zod (server-side, sempre) |
 | Banco | Cloudflare D1 (SQLite) |
@@ -179,12 +183,65 @@ deploy. Use bancos D1 distintos para cada um.
 
 ## Deploy
 
+O frontend fica na **Vercel** e a API no **Cloudflare Worker** com o banco D1.
+O navegador nunca fala com o domínio do Worker: a Vercel reescreve `/api/*` para
+ele, então do ponto de vista do browser tudo é mesma origem. Isso preserva o
+cookie de sessão `HttpOnly; SameSite=Lax; Secure` sem afrouxar nada e dispensa
+CORS por completo.
+
+```
+navegador ──► juventusfc.vercel.app ──┬── /            arquivos estáticos (dist/)
+                                      └── /api/*  ───► Worker ──► D1
+                                            rewrite da Vercel
+```
+
+### 1. Cloudflare (Worker + D1)
+
+Siga [Configuração no Cloudflare](#configuração-no-cloudflare) para criar o banco
+e preencher o `database_id`, aplique as migrations remotas e publique:
+
 ```bash
+npm run db:migrate:remote
 npm run deploy
 ```
 
-Faz o build e publica o Worker com os assets. Depois de qualquer alteração de
-schema, rode `npm run db:migrate:remote` antes.
+O `deploy` usa `--env production`, então o Worker publicado se chama
+`juventusfc-production` e a URL sai no fim do comando, no formato
+`https://juventusfc-production.<subdominio-da-conta>.workers.dev`.
+
+### 2. Vercel (frontend + proxy)
+
+`vercel.json` já traz o build (`npm run build` → `dist/`), o fallback de SPA e a
+reescrita da API. **Substitua o host de exemplo** em `rewrites[0].destination`
+pela URL real impressa no passo anterior:
+
+```json
+{
+  "source": "/api/:path*",
+  "destination": "https://juventusfc-production.<subdominio-da-conta>.workers.dev/api/:path*"
+}
+```
+
+A Vercel não interpola variáveis de ambiente em `destination`, então o host
+precisa ser literal. Trocar de Worker significa editar esse arquivo e publicar.
+
+Nenhuma variável `VITE_*` é necessária: `src/services/api.ts` chama `/api`
+relativo, com `credentials: 'same-origin'`.
+
+### 3. Conferência
+
+Depois do deploy, pelo domínio da Vercel:
+
+```bash
+curl -i https://<seu-dominio>.vercel.app/api/bootstrap
+```
+
+Deve responder JSON com `Cache-Control: no-store` — se vier HTML, a reescrita
+não está ativa. Após o login, o cookie `jfc_session` precisa aparecer no domínio
+da Vercel com `HttpOnly` e `Secure`.
+
+Depois de qualquer alteração de schema, rode `npm run db:migrate:remote` antes do
+`npm run deploy`.
 
 ## API
 
@@ -324,6 +381,180 @@ Worker ou dependem de APIs do Node ou carregam vulnerabilidades de parser que
 nunca usaríamos — este código apenas escreve. Valores monetários saem como número
 com formato de moeda, não como texto.
 
+## Mascote
+
+O mascote do clube aparece no portal e na tela de acesso através de um único
+componente, `Mascot3D`, em `src/components/mascot/`.
+
+```
+Mascot3D            decide o que renderizar e contém as falhas
+  MascotStage       palco: luz, sombra de contato, entrada
+    MascotStill     composição estática (webp/png)
+    MascotScene     camada WebGL — React Three Fiber + drei, carregada sob demanda
+  useMascotMotion   liga mouse, sensores e visibilidade ao motor
+  mascotMotion      motor: amortecimento, pose, publicação em CSS custom properties
+```
+
+Uso:
+
+```tsx
+<Mascot3D variant="home" state="idle" intensity={1} priority />
+<Mascot3D variant="login" state="login" intensity={0.5} />
+```
+
+`variant` define o orçamento de movimento (`home`, `login`, `compact`), `state`
+inclina a pose de repouso (`idle`, `focus`, `login`, `success`, `victory`) e
+`intensity` multiplica o conjunto. O tamanho vem do contêiner: o componente
+ocupa `100%` da caixa que o envolve.
+
+### Movimento
+
+Um único motor alimenta as duas camadas. A cada quadro ele amortece a entrada e
+publica a pose como custom properties (`--mascot-rx`, `--mascot-ry`,
+`--mascot-tx`, `--mascot-ty`, `--mascot-scale`) no elemento do palco; cada camada
+lê essas propriedades multiplicadas pela própria profundidade, o que produz
+paralaxe com uma escrita de estilo por quadro. A cena WebGL lê a mesma pose
+dentro do seu laço de render, então trocar de camada não muda o comportamento.
+
+- **Mouse** (ponteiro fino): a posição no viewport vira alvo normalizado; a
+  rotação fica entre 3° e 6° e o amortecimento é independente da taxa de
+  quadros. Parado o cursor por 2,2 s, a figura volta sozinha ao repouso.
+- **Celular** (ponteiro grosso): `deviceorientation`, com o ângulo em que o
+  aparelho estava ao começar servindo de neutro e troca de eixos em paisagem. No
+  iOS a permissão exige gesto, então o componente oferece um controle discreto
+  em vez de pedir sozinho; recusar não tem custo e o pedido não volta na sessão.
+- O laço para quando a figura assenta, quando a aba fica oculta e quando o
+  mascote sai da viewport.
+
+### Camadas e degradação
+
+`Mascot3D` começa sempre na composição estática e só sobe para o modelo quando
+todas as condições existem. Cada porta abaixo cai para a estática, nunca para um
+espaço vazio:
+
+| Situação | Resultado |
+| --- | --- |
+| Sem `juventus-mascot.glb` | Composição estática; o Three.js não é baixado |
+| Sem WebGL | Composição estática |
+| `prefers-reduced-motion` | Composição estática e imóvel, sem laço de quadros |
+| Modo de economia de dados | Composição estática |
+| GLB inválido ou contexto perdido | Volta para a composição estática |
+| Sem sensor, ou permissão negada | Segue no repouso e no mouse quando houver |
+
+A verificação do modelo é um `HEAD`: como os dois hosts respondem caminhos
+inexistentes com o `index.html` da SPA, o que decide é o `content-type`, não o
+status.
+
+### Publicar o modelo
+
+Coloque o arquivo em `public/models/juventus-mascot.glb` — veja
+`public/models/README.md` para o que a cena espera dele. Não há sinalizador para
+ligar: o componente encontra o arquivo sozinho no próximo carregamento.
+
+### Acessibilidade
+
+O mascote é decoração e nada depende dele. O palco é `aria-hidden`, a arte tem
+`alt` vazio, nada dentro dele recebe foco e a árvore inteira é
+`pointer-events: none` — só o controle de sensores volta a receber ponteiro.
+
+## Identidade e PWA
+
+O ícone oficial do clube — o gorila coroado com o monograma JI — vive em
+`public/icons/`. A arte é a fornecida pelo clube; as variantes são apenas
+redimensionamentos do mesmo quadrado, sem recorte de conteúdo, borda, texto ou
+alteração de cor.
+
+| Arquivo | Uso |
+| --- | --- |
+| `favicon.ico` (16/32/48) | Aba, favoritos e navegadores antigos |
+| `icon-16.png`, `icon-32.png`, `icon-48.png` | Favicon em PNG |
+| `apple-touch-icon.png` (180×180) | Atalho na tela inicial do iPhone e iPad |
+| `icon-192.png`, `icon-512.png` | Instalação do PWA |
+| `icon-maskable-192.png`, `icon-maskable-512.png` | Android, que recorta o ícone |
+
+As versões `apple-touch` e `maskable` são achatadas sobre o ONYX `#08090B`
+porque o iOS ignora transparência e o Android recorta o quadrado até um círculo;
+nas maskable a arte é recuada para a zona segura, que é o que evita perder a
+coroa no recorte. As demais preservam os cantos transparentes da arte original.
+
+`public/manifest.webmanifest` declara nome, ícones, `display: standalone`,
+escopo `/` e as cores da identidade (`theme_color` e `background_color` em
+ONYX). `index.html` referencia o manifest, os favicons, o apple-touch-icon e as
+metas de aplicativo — nenhum comportamento da aplicação muda: instalada, ela é a
+mesma plataforma em tela cheia.
+
+## Recuperação de senha
+
+O "Esqueceu a senha?" do login é um fluxo completo, não um aviso.
+
+```
+/entrar → /esqueci-senha        POST /api/auth/forgot-password
+                                    ↓ token de 256 bits, hash no banco
+                                  e-mail com o link
+/redefinir-senha?token=…        POST /api/auth/reset-password/check
+                                POST /api/auth/reset-password
+                                    ↓ nova senha, token gasto,
+                                      sessões da conta revogadas
+/entrar
+```
+
+O e-mail é procurado em `people.email` — a conta não guarda endereço próprio, o
+vínculo é com a pessoa.
+
+### Endpoints
+
+| Método | Rota | Autorização |
+| --- | --- | --- |
+| POST | `/api/auth/forgot-password` | pública — sempre responde igual |
+| POST | `/api/auth/reset-password/check` | pública — diz se o próprio link ainda vale |
+| POST | `/api/auth/reset-password` | pública — aplica a nova senha |
+
+### O que o fluxo garante
+
+- **Resposta única.** `forgot-password` devolve sempre `200` com a mesma
+  mensagem, para endereço existente, inexistente ou no limite de tentativas. Um
+  token é gerado e hasheado nos dois caminhos, então o trabalho feito é
+  equivalente.
+- **Token.** 32 bytes de `crypto.getRandomValues`. Só o SHA-256 vai para
+  `password_resets`, como já acontece com o cookie de sessão — ler a tabela não
+  produz um link utilizável. Vale 30 minutos, serve uma vez, e uma nova
+  solicitação invalida as anteriores da mesma conta.
+- **Ordem da validação.** A política de senha é conferida antes de o token ser
+  tocado, então um erro de digitação não queima o link.
+- **Sessões.** Uma redefinição bem-sucedida revoga todas as sessões daquela
+  conta — e só daquela. A nova senha entra imediatamente.
+- **Limite.** Cinco solicitações por conta por hora, contadas no banco, não na
+  memória do Worker. Estourar o limite não muda a resposta: apenas não gera
+  outro e-mail.
+- **Nada nos logs.** Token, senha e endereço não são registrados em log nem
+  devolvidos pela API.
+
+### E-mail
+
+Não existe provedor configurado nesta instalação, e inventar um significaria
+inventar credenciais. O que existe é a costura: `worker/src/lib/mailer.ts`
+define `Mailer`, e `sendMail` registra toda tentativa em `mail_outbox`.
+
+| Provedor | Quando | O que faz |
+| --- | --- | --- |
+| `nao-configurado` | padrão | Registra `sem_provedor`; nada é entregue |
+| `captura-dev` | `MAIL_PROVIDER=capture` fora de produção | Guarda a mensagem em `mail_outbox` |
+
+O `captura-dev` é um sink de desenvolvimento, na linha do Mailpit: ele grava o
+link em texto para o fluxo poder ser exercitado localmente, recusa rodar quando
+`ENVIRONMENT` é `production` e não tem nenhuma superfície HTTP — lê-lo significa
+consultar o banco local. É o que a suíte de testes usa como caixa de entrada.
+
+Para ligar um provedor real basta uma implementação de `Mailer` e a variável que
+a seleciona; nada acima de `sendMail` muda. **Enquanto isso não existir, o link
+de redefinição é criado e não sai** — essa é a única parte do fluxo que depende
+de configuração externa.
+
+`APP_ORIGIN` precisa apontar para o domínio público: atrás da reescrita da
+Vercel o Worker só enxerga o próprio host, e o link sairia apontando para o
+lugar errado. O cabeçalho `Origin` da requisição não é usado — ele é controlado
+por quem chama e viraria um jeito de sequestrar o token.
+
 ## Testes
 
 ```bash
@@ -361,18 +592,25 @@ nem quebra de linha nos badges.
 migrations/            schema versionado do D1
 worker/src/
   index.ts             roteamento e entrega da SPA
-  lib/                 sessão, senha, permissões, validação, erros, xlsx
+  lib/                 sessão, senha, permissões, validação, erros, xlsx, e-mail
   routes/              um arquivo por domínio da API
 src/
   app/                 rotas, guards, contexto de sessão, navegação
   components/          design system, gráficos, tabelas, motion
   layouts/             shell da aplicação
-  pages/               uma página por rota
+  pages/               uma página por rota (inclui auth/ com a recuperação)
   modules/             composições reaproveitadas entre páginas
+  components/mascot/   mascote: motor de movimento, palco, camada 3D, fallback
   services/            cliente HTTP e repositórios por recurso
   shared/              catálogo de permissões (Worker + SPA)
   types/               modelo de domínio
-tests/                 end-to-end de API e de interface
+public/icons/          ícone oficial: favicon, apple-touch e PWA
+public/mascot/         arte do mascote usada pela composição estática
+public/models/         onde o GLB do mascote deve ser publicado
+public/manifest.webmanifest
+tests/                 end-to-end de API, interface, mascote e recuperação
+wrangler.jsonc         Worker, D1 e assets (Cloudflare)
+vercel.json            build, fallback de SPA e reescrita de /api (Vercel)
 ```
 
 ## Decisões relevantes

@@ -3,12 +3,15 @@ import { motion } from 'framer-motion';
 import { ArrowRight } from 'lucide-react';
 import { DUR, EASE } from '@/lib/motion';
 import { Crest } from '@/components/brand/Crest';
+import { Mascot3D } from '@/components/mascot';
 import { useSession } from '@/app/SessionContext';
 
 /**
- * Institutional portal. Deliberately quiet: one statement, one way in, and a
- * reserved stage in the middle where the 3D shirt will land in a later phase —
- * the surrounding composition is already sized for it.
+ * Institutional portal. Deliberately quiet: one statement, one way in, and the
+ * club's mascot answering it from the right of the hero.
+ *
+ * The mascot is decoration. It is rendered after the copy, never overlaps a
+ * control, and the page reads exactly the same with it switched off.
  */
 export default function HomePage() {
   const { publicClub, needsOnboarding, account } = useSession();
@@ -80,75 +83,61 @@ export default function HomePage() {
         </span>
       </motion.header>
 
-      {/* Stage reserved for the 3D shirt */}
-      <div className="relative z-10 flex flex-1 items-center justify-center px-6">
-        <div
-          data-slot="shirt-3d"
-          aria-hidden
-          className="relative flex h-[clamp(220px,38vh,380px)] w-full max-w-[420px] items-center justify-center"
-        >
-          <motion.span
-            className="absolute h-[62%] w-[62%] rounded-full border border-line-gold"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: [0.25, 0.55, 0.25], scale: 1 }}
-            transition={{ opacity: { duration: 5, repeat: Infinity, ease: 'easeInOut' }, scale: { duration: 1.4, ease: EASE } }}
-          />
-          <motion.span
-            className="absolute h-[38%] w-[38%] rounded-full border border-line"
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 0.6, scale: 1 }}
-            transition={{ duration: 1.4, ease: EASE, delay: 0.3 }}
-          />
-          <motion.span
-            className="absolute bottom-4 h-px w-[70%] bg-gradient-to-r from-transparent via-gold/25 to-transparent"
-            initial={{ opacity: 0, scaleX: 0.4 }}
-            animate={{ opacity: 1, scaleX: 1 }}
-            transition={{ duration: 1.2, ease: EASE, delay: 0.5 }}
-          />
+      {/* Hero. The statement leads on the left; the mascot answers from the
+          right on wide screens and sits above the copy on narrow ones, where
+          stacking it is the only way it never lands on top of the text. */}
+      <div className="relative z-10 flex flex-1 items-center px-6 pb-10 sm:px-10 sm:pb-14">
+        <div className="grid w-full items-center gap-y-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.92fr)] lg:gap-x-10">
+          <div
+            data-slot="mascot-3d"
+            className="order-1 mx-auto h-[clamp(210px,34vh,300px)] w-full max-w-[360px] sm:h-[clamp(300px,44vh,470px)] sm:max-w-[460px] lg:order-2 lg:-mr-6 lg:mx-0 lg:h-[min(70vh,680px)] lg:max-w-none xl:-mr-14"
+          >
+            <Mascot3D variant="home" state="idle" intensity={1} priority />
+          </div>
+
+          {/* Statement */}
+          <motion.section
+            initial="initial"
+            animate="animate"
+            variants={{ animate: { transition: { staggerChildren: 0.09, delayChildren: 0.35 } } }}
+            className="order-2 lg:order-1"
+          >
+            <motion.p
+              variants={{ initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0, transition: { duration: DUR.editorial, ease: EASE } } }}
+              className="eyebrow"
+            >
+              {[location, publicClub?.foundedYear && `desde ${publicClub.foundedYear}`]
+                .filter(Boolean)
+                .join(' · ') || 'Plataforma de gestão'}
+            </motion.p>
+
+            <motion.h1
+              variants={{ initial: { opacity: 0, y: 18 }, animate: { opacity: 1, y: 0, transition: { duration: 0.9, ease: EASE } } }}
+              className="mt-4 font-display text-[clamp(3rem,11vw,7.5rem)] font-medium leading-[0.88] tracking-tightest text-ink"
+            >
+              Chega mais<span className="text-gold">.</span>
+            </motion.h1>
+
+            <motion.div
+              variants={{ initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0, transition: { duration: DUR.editorial, ease: EASE } } }}
+              className="mt-7 flex flex-wrap items-end justify-between gap-8"
+            >
+              <p className="max-w-md text-[13px] leading-relaxed text-ink-muted sm:text-sm">
+                O clube inteiro em um só lugar: elenco, calendário, finanças e patrimônio.
+                Feito para quem cuida do Juventus todos os dias.
+              </p>
+
+              <Link
+                to={entryHref}
+                className="group inline-flex items-center gap-2.5 rounded-md bg-ink px-5 py-3 text-sm font-medium text-onyx transition-colors duration-200 hover:bg-white"
+              >
+                {entryLabel}
+                <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+              </Link>
+            </motion.div>
+          </motion.section>
         </div>
       </div>
-
-      {/* Statement */}
-      <motion.section
-        initial="initial"
-        animate="animate"
-        variants={{ animate: { transition: { staggerChildren: 0.09, delayChildren: 0.35 } } }}
-        className="relative z-10 px-6 pb-10 sm:px-10 sm:pb-14"
-      >
-        <motion.p
-          variants={{ initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0, transition: { duration: DUR.editorial, ease: EASE } } }}
-          className="eyebrow"
-        >
-          {[location, publicClub?.foundedYear && `desde ${publicClub.foundedYear}`]
-            .filter(Boolean)
-            .join(' · ') || 'Plataforma de gestão'}
-        </motion.p>
-
-        <motion.h1
-          variants={{ initial: { opacity: 0, y: 18 }, animate: { opacity: 1, y: 0, transition: { duration: 0.9, ease: EASE } } }}
-          className="mt-4 font-display text-[clamp(3rem,11vw,7.5rem)] font-medium leading-[0.88] tracking-tightest text-ink"
-        >
-          Chega mais<span className="text-gold">.</span>
-        </motion.h1>
-
-        <motion.div
-          variants={{ initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0, transition: { duration: DUR.editorial, ease: EASE } } }}
-          className="mt-7 flex flex-wrap items-end justify-between gap-8"
-        >
-          <p className="max-w-md text-[13px] leading-relaxed text-ink-muted sm:text-sm">
-            O clube inteiro em um só lugar: elenco, calendário, finanças e patrimônio.
-            Feito para quem cuida do Juventus todos os dias.
-          </p>
-
-          <Link
-            to={entryHref}
-            className="group inline-flex items-center gap-2.5 rounded-md bg-ink px-5 py-3 text-sm font-medium text-onyx transition-colors duration-200 hover:bg-white"
-          >
-            {entryLabel}
-            <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-          </Link>
-        </motion.div>
-      </motion.section>
 
       {/* Footer facts */}
       {facts.length > 0 && (

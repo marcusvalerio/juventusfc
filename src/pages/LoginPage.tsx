@@ -89,6 +89,7 @@ export default function LoginPage() {
       eyebrow="Acesso à plataforma"
       title={publicClub?.shortName ?? 'Entrar'}
       backdrop={backdrop}
+      mascot="login"
       footer={
         <Link to="/" className="text-2xs text-ink-faint transition-colors hover:text-gold">
           Voltar ao portal
@@ -140,7 +141,9 @@ export default function LoginPage() {
       </form>
 
       <p className="mt-6 text-center text-2xs text-ink-ghost">
-        Esqueceu a senha? Fale com a administração do clube.
+        <Link to="/esqueci-senha" className="text-ink-faint transition-colors hover:text-gold">
+          Esqueceu a senha?
+        </Link>
       </p>
 
       {/* Discreet pointer for someone who arrived expecting to set the club up.
