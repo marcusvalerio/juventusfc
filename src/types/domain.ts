@@ -79,6 +79,19 @@ export interface Player extends Entity {
   dueDay: number; // 1-31
   status: SquadStatus;
   notes?: string;
+  history?: PlayerHistory;
+}
+
+/**
+ * How many records depend on a player. Present only on the detail read — the
+ * list stays a single query — and used to decide whether leaving the squad
+ * means deleting the record or retiring it.
+ */
+export interface PlayerHistory {
+  dues: number;
+  lineups: number;
+  trainings: number;
+  total: number;
 }
 
 export type BoardStatus = 'ativo' | 'encerrado';

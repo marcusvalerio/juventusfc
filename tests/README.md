@@ -21,7 +21,15 @@ npm run test:ui             # jornada pela interface com Playwright (31)
 npm run test:first-access   # fluxo de primeiro acesso, casos A–G (38)
 npm run test:mascot         # mascote: movimento, fallbacks e acessibilidade (72)
 npm run test:password-reset # recuperação de senha, ponta a ponta (55)
+npm run test:players        # editar e retirar jogadores do elenco (61)
 ```
+
+O roteiro de jogadores cobre a edição (mesma pessoa, mesmo registro, campo a
+campo), a recusa da API para quem não tem `squad.edit`/`squad.delete`, e a saída
+do elenco nos dois caminhos: remoção quando nada depende do jogador e inativação
+quando há mensalidades, escalações ou treinos — verificando que esse histórico e
+a pessoa continuam intactos. Inclui a jornada pela interface em desktop e
+mobile.
 
 O roteiro do mascote cobre a Home e o Login em desktop e mobile, o limite de
 rotação e o retorno ao repouso, `prefers-reduced-motion`, ausência de WebGL,

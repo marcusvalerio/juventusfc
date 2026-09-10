@@ -69,6 +69,37 @@ async function resolvePerson(
 
 /* ============================================================== players */
 
+export interface PlayerHistory {
+  dues: number;
+  lineups: number;
+  trainings: number;
+  total: number;
+}
+
+/**
+ * How much of the club's record depends on this player.
+ *
+ * Every one of these tables cascades on delete, so removing a player row would
+ * silently take his dues, his call-ups and his attendance with it. Counting
+ * first is what lets the delete route choose between erasing a mistake and
+ * retiring a career.
+ */
+async function playerHistory(db: D1Database, playerId: string): Promise<PlayerHistory> {
+  const row = await db
+    .prepare(
+      `SELECT (SELECT COUNT(*) FROM monthly_dues WHERE player_id = ?)          AS dues,
+              (SELECT COUNT(*) FROM lineup_entries WHERE player_id = ?)        AS lineups,
+              (SELECT COUNT(*) FROM training_participants WHERE player_id = ?) AS trainings`,
+    )
+    .bind(playerId, playerId, playerId)
+    .first<{ dues: number; lineups: number; trainings: number }>();
+
+  const dues = Number(row?.dues ?? 0);
+  const lineups = Number(row?.lineups ?? 0);
+  const trainings = Number(row?.trainings ?? 0);
+  return { dues, lineups, trainings, total: dues + lineups + trainings };
+}
+
 const playerSchema = z.object({
   personId: z.string().trim().optional().nullable(),
   fullName: optionalText(200),
@@ -95,11 +126,14 @@ squad.get('/players', requirePermission('squad.view'), async (c) => {
 });
 
 squad.get('/players/:id', requirePermission('squad.view'), async (c) => {
+  const id = c.req.param('id');
   const row = await c.env.DB.prepare(`${PLAYER_SELECT} WHERE pl.id = ? AND pl.club_id = ?`)
-    .bind(c.req.param('id'), c.get('clubId'))
+    .bind(id, c.get('clubId'))
     .first();
   if (!row) throw notFound('Jogador não encontrado.');
-  return c.json({ data: mapPlayer(row) });
+  // `history` rides along on the detail read only: the list stays a single
+  // query, and the screen that needs the counts already fetches this row.
+  return c.json({ data: { ...mapPlayer(row), history: await playerHistory(c.env.DB, id) } });
 });
 
 squad.post('/players', requirePermission('squad.create'), async (c) => {
@@ -172,20 +206,49 @@ squad.put('/players/:id', requirePermission('squad.edit'), async (c) => {
   return c.json({ data: player });
 });
 
+/**
+ * Leaving the squad.
+ *
+ * `monthly_dues`, `lineup_entries` and `training_participants` all cascade from
+ * `players`, so a physical delete does not just remove an athlete — it rewrites
+ * the club's financial and sporting history. A player who has any of that is
+ * therefore retired (status `inativo`), which is the same flag the squad form
+ * already offers; only a record with nothing attached is actually deleted.
+ *
+ * The person is never touched. She stays in the central register with whatever
+ * other roles she holds.
+ */
 squad.delete('/players/:id', requirePermission('squad.delete'), async (c) => {
   const id = c.req.param('id');
+  const clubId = c.get('clubId');
   const row = await c.env.DB.prepare(`${PLAYER_SELECT} WHERE pl.id = ? AND pl.club_id = ?`)
-    .bind(id, c.get('clubId'))
+    .bind(id, clubId)
     .first();
   if (!row) throw notFound('Jogador não encontrado.');
 
-  await c.env.DB.prepare('DELETE FROM players WHERE id = ? AND club_id = ?')
-    .bind(id, c.get('clubId'))
-    .run();
+  const player = mapPlayer(row);
+  const history = await playerHistory(c.env.DB, id);
+
+  if (history.total > 0) {
+    await c.env.DB.prepare('UPDATE players SET status = ?, updated_at = ? WHERE id = ? AND club_id = ?')
+      .bind('inativo', nowIso(), id, clubId)
+      .run();
+    const updated = await c.env.DB.prepare(`${PLAYER_SELECT} WHERE pl.id = ?`).bind(id).first();
+    await logActivity(c.env, c.get('session'), {
+      kind: 'elenco',
+      title: 'Jogador inativado',
+      detail: `${player.name} — histórico preservado`,
+      entityType: 'player',
+      entityId: id,
+    });
+    return c.json({ ok: true, mode: 'inativado', history, data: mapPlayer(updated!) });
+  }
+
+  await c.env.DB.prepare('DELETE FROM players WHERE id = ? AND club_id = ?').bind(id, clubId).run();
   await logActivity(c.env, c.get('session'), {
-    kind: 'elenco', title: 'Jogador removido do elenco', detail: mapPlayer(row).name,
+    kind: 'elenco', title: 'Jogador removido do elenco', detail: player.name,
   });
-  return c.json({ ok: true });
+  return c.json({ ok: true, mode: 'removido', history });
 });
 
 /* ============================================================ diretoria */

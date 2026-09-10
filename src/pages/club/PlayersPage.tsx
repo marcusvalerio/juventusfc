@@ -1,14 +1,15 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { LayoutGrid, List, Plus } from 'lucide-react';
+import { Eye, LayoutGrid, List, Pencil, Plus, Trash2 } from 'lucide-react';
 import { PageTransition } from '@/components/motion/PageTransition';
 import { PageHeader } from '@/layouts/PageHeader';
 import { DataTable, type Column } from '@/components/data/DataTable';
 import { FilterBar } from '@/components/data/FilterBar';
 import { FormModal, FormSection } from '@/components/data/FormModal';
 import { Badge, StatusBadge } from '@/components/ui/Badge';
-import { Button } from '@/components/ui/Button';
+import { Button, IconButton } from '@/components/ui/Button';
+import { Modal } from '@/components/ui/Modal';
 import { ShirtNumber } from '@/components/ui/Avatar';
 import { SegmentedControl } from '@/components/ui/Tabs';
 import { DatePicker, Field, Input, Select, Textarea } from '@/components/ui/Field';
@@ -19,10 +20,11 @@ import { useToast } from '@/components/ui/Toast';
 import { runSubmit } from '@/lib/submit';
 import { useDisclosure } from '@/hooks/useDisclosure';
 import { useTableState } from '@/hooks/useTableState';
-import { playersRepo } from '@/services';
+import { playersRepo, removePlayer } from '@/services';
+import { ApiError } from '@/services/api';
 import { age } from '@/lib/dates';
 import { currency } from '@/lib/format';
-import type { Player, Position } from '@/types/domain';
+import type { Player, PlayerHistory, Position } from '@/types/domain';
 import { useSession } from '@/app/SessionContext';
 
 const POSITIONS: Position[] = ['Goleiro', 'Zagueiro', 'Lateral Direito', 'Lateral Esquerdo', 'Volante', 'Meia', 'Ponta', 'Atacante'];
@@ -43,6 +45,21 @@ const emptyForm = {
   status: 'ativo',
   notes: '',
 };
+
+const plural = (count: number, one: string, many: string) =>
+  `${count} ${count === 1 ? one : many}`;
+
+/** Turns the dependency counts into the clause the dialog reads out. */
+function historySummary(history: PlayerHistory) {
+  const parts = [
+    history.dues > 0 && plural(history.dues, 'mensalidade', 'mensalidades'),
+    history.lineups > 0 && plural(history.lineups, 'escalação', 'escalações'),
+    history.trainings > 0 && plural(history.trainings, 'treino', 'treinos'),
+  ].filter(Boolean) as string[];
+
+  if (parts.length <= 1) return parts[0] ?? 'registros';
+  return `${parts.slice(0, -1).join(', ')} e ${parts[parts.length - 1]}`;
+}
 
 function PlayerCard({ player }: { player: Player }) {
   return (
@@ -79,13 +96,106 @@ function PlayerCard({ player }: { player: Player }) {
 
 export default function PlayersPage() {
   const navigate = useNavigate();
-  const { teams } = useSession();
+  const { teams, can } = useSession();
   const { data, status, reload } = useAsync(() => playersRepo.list(), []);
   const [view, setView] = useState<'tabela' | 'cards'>('tabela');
   const form = useDisclosure();
   const toast = useToast();
   const [values, setValues] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  /** Set while the form is editing an existing player; null while creating. */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<Player | null>(null);
+  const [removalHistory, setRemovalHistory] = useState<PlayerHistory | null>(null);
+  const [removalCheck, setRemovalCheck] = useState<'checking' | 'ready' | 'failed'>('checking');
+  const [removalBusy, setRemovalBusy] = useState(false);
+  const removalRequest = useRef<string | null>(null);
+
+  // The API enforces these too; hiding the controls only keeps the screen honest
+  // about what this account can do.
+  const canEdit = can('squad.edit');
+  const canDelete = can('squad.delete');
+
+  const openCreate = () => {
+    setEditingId(null);
+    setValues(emptyForm);
+    setErrors({});
+    form.open();
+  };
+
+  const openEdit = (player: Player) => {
+    setEditingId(player.id);
+    setErrors({});
+    setValues({
+      name: player.name,
+      nickname: player.nickname ?? '',
+      shirtNumber: player.shirtNumber == null ? '' : String(player.shirtNumber),
+      position: player.position,
+      secondaryPosition: player.secondaryPosition ?? '',
+      teamId: player.teamId ?? '',
+      birthDate: player.birthDate ?? '',
+      phone: player.phone ?? '',
+      joinedAt: player.joinedAt ?? '',
+      monthlyFee: String(player.monthlyFee),
+      dueDay: String(player.dueDay),
+      status: player.status,
+      notes: player.notes ?? '',
+    });
+    form.open();
+  };
+
+  const closeForm = () => {
+    form.close();
+    setEditingId(null);
+    setValues(emptyForm);
+    setErrors({});
+  };
+
+  /**
+   * Asks the API what depends on this player before showing the dialog, so the
+   * confirmation states what will actually happen instead of a generic warning.
+   */
+  const askRemoval = (player: Player) => {
+    setRemoving(player);
+    setRemovalHistory(null);
+    setRemovalCheck('checking');
+    removalRequest.current = player.id;
+    void playersRepo
+      .get(player.id)
+      .then((detail) => {
+        if (removalRequest.current !== player.id) return;
+        setRemovalHistory(detail?.history ?? { dues: 0, lineups: 0, trainings: 0, total: 0 });
+        setRemovalCheck('ready');
+      })
+      .catch(() => {
+        // The dialog then describes both outcomes; the server decides either way.
+        if (removalRequest.current === player.id) setRemovalCheck('failed');
+      });
+  };
+
+  const willRetire = (removalHistory?.total ?? 0) > 0;
+
+  const confirmRemoval = async () => {
+    if (!removing || removalBusy) return;
+    setRemovalBusy(true);
+    try {
+      const result = await removePlayer(removing.id);
+      toast.success(
+        result.mode === 'inativado' ? 'Jogador inativado' : 'Jogador removido do elenco',
+        result.mode === 'inativado'
+          ? 'O histórico de mensalidades, escalações e treinos foi preservado.'
+          : 'A pessoa continua no cadastro central do clube.',
+      );
+      setRemoving(null);
+      reload();
+    } catch (cause) {
+      toast.error(
+        cause instanceof ApiError ? cause.message : 'Não foi possível concluir. Tente novamente.',
+      );
+    } finally {
+      setRemovalBusy(false);
+    }
+  };
 
   const table = useTableState<Player>(data, ['name', 'nickname', 'position', 'team'], {
     pageSize: view === 'cards' ? 12 : 10,
@@ -152,6 +262,36 @@ export default function PlayersPage() {
       ),
     },
     { key: 'status', header: 'Situação', align: 'right', render: (player) => <StatusBadge status={player.status} /> },
+    {
+      key: 'actions',
+      header: 'Ações',
+      align: 'right',
+      width: '132px',
+      render: (player) => (
+        // The row navigates on click, so the actions stop the event here.
+        <div
+          className="flex items-center justify-end gap-0.5"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <IconButton
+            label={`Visualizar ${player.name}`}
+            icon={<Eye />}
+            onClick={() => navigate(`/app/jogadores/${player.id}`)}
+          />
+          {canEdit && (
+            <IconButton label={`Editar ${player.name}`} icon={<Pencil />} onClick={() => openEdit(player)} />
+          )}
+          {canDelete && (
+            <IconButton
+              label={`Excluir ou inativar ${player.name}`}
+              icon={<Trash2 />}
+              className="hover:text-danger"
+              onClick={() => askRemoval(player)}
+            />
+          )}
+        </div>
+      ),
+    },
   ];
 
   const submit = async () => {
@@ -165,9 +305,10 @@ export default function PlayersPage() {
 
     const ok = await runSubmit(
       async () => {
-        // The API creates the person when only a name is given, so the squad
-        // record always points at a row in the central register.
-        await playersRepo.create({
+        // On create the API resolves the person from the name given here; on
+        // update it keeps the existing person_id and only rewrites her fields,
+        // so editing never spawns a second person or a second squad record.
+        const payload = {
           fullName: values.name,
           nickname: values.nickname,
           birthDate: values.birthDate,
@@ -181,13 +322,19 @@ export default function PlayersPage() {
           dueDay: values.dueDay,
           status: values.status,
           notes: values.notes,
-        });
+        };
+
+        if (editingId) await playersRepo.update(editingId, payload);
+        else await playersRepo.create(payload);
         reload();
       },
       setErrors,
       toast,
     );
-    if (ok) setValues(emptyForm);
+    if (ok) {
+      setValues(emptyForm);
+      setEditingId(null);
+    }
     return ok;
   };
 
@@ -235,7 +382,7 @@ export default function PlayersPage() {
           </p>
         }
         actions={
-          <Button variant="primary" icon={<Plus />} onClick={form.open}>
+          <Button variant="primary" icon={<Plus />} onClick={openCreate}>
             Novo jogador
           </Button>
         }
@@ -289,10 +436,11 @@ export default function PlayersPage() {
 
       <FormModal
         open={form.isOpen}
-        onClose={form.close}
-        title="Novo jogador"
+        onClose={closeForm}
+        title={editingId ? 'Editar jogador' : 'Novo jogador'}
         description="Cadastro do atleta, vínculo com a equipe e condições de mensalidade."
-        successMessage="Jogador cadastrado"
+        submitLabel={editingId ? 'Salvar alterações' : 'Salvar'}
+        successMessage={editingId ? 'Jogador atualizado' : 'Jogador cadastrado'}
         onSubmit={submit}
       >
         <FormSection title="Identificação">
@@ -424,6 +572,54 @@ export default function PlayersPage() {
           </Field>
         </FormSection>
       </FormModal>
+
+      <Modal
+        open={Boolean(removing)}
+        onClose={removalBusy ? () => {} : () => setRemoving(null)}
+        size="sm"
+        title={willRetire ? 'Inativar jogador?' : 'Excluir jogador?'}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setRemoving(null)} disabled={removalBusy}>
+              Cancelar
+            </Button>
+            <Button
+              variant="danger"
+              loading={removalBusy}
+              disabled={removalCheck === 'checking'}
+              onClick={confirmRemoval}
+            >
+              {willRetire ? 'Inativar jogador' : 'Excluir jogador'}
+            </Button>
+          </>
+        }
+      >
+        <p className="text-[13px] leading-relaxed text-ink-muted">
+          {removalCheck === 'checking' ? (
+            <>Verificando o que depende de {removing?.name}…</>
+          ) : removalCheck === 'failed' ? (
+            <>
+              Não foi possível verificar o histórico de {removing?.name} agora. Ao confirmar, o
+              servidor decide: com registros vinculados o jogador é inativado e nada se perde; sem
+              nenhum, o cadastro é removido.
+            </>
+          ) : willRetire ? (
+            <>
+              {removing?.name} tem {historySummary(removalHistory!)} no clube. Por isso o jogador
+              será <span className="text-ink">inativado</span>, e esse histórico permanece
+              intacto.
+            </>
+          ) : (
+            <>
+              Nenhum registro depende de {removing?.name}. O cadastro dele no elenco será removido
+              definitivamente.
+            </>
+          )}
+        </p>
+        <p className="mt-3 text-2xs leading-relaxed text-ink-ghost">
+          A pessoa continua no cadastro central do clube, com os outros vínculos que tiver.
+        </p>
+      </Modal>
 
       {status === 'success' && table.rows.length > 0 && view === 'cards' && (
         <p className="mt-4 text-2xs text-ink-ghost">
