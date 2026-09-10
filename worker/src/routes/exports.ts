@@ -109,7 +109,7 @@ async function buildSheets(c: Context<AppBindings>, kind: string): Promise<Sheet
       const rows = await query(
         c,
         `SELECT d.*, p.full_name FROM monthly_dues d
-           JOIN players pl ON pl.id = d.player_id JOIN people p ON p.id = pl.person_id
+           JOIN people p ON p.id = d.person_id
           WHERE d.club_id = ? ORDER BY d.reference_month DESC, p.full_name`,
         clubId,
       );
@@ -117,7 +117,7 @@ async function buildSheets(c: Context<AppBindings>, kind: string): Promise<Sheet
         {
           name: 'Mensalidades',
           columns: [
-            { header: 'Jogador', key: 'player', width: 28 },
+            { header: 'Pessoa', key: 'person', width: 28 },
             { header: 'Referência', key: 'ref', width: 14 },
             { header: 'Vencimento', key: 'due', width: 14 },
             { header: 'Previsto', key: 'expected', type: 'money', width: 14 },
@@ -128,7 +128,7 @@ async function buildSheets(c: Context<AppBindings>, kind: string): Promise<Sheet
             { header: 'Observações', key: 'notes', width: 40 },
           ],
           rows: rows.map((row: any) => ({
-            player: row.full_name, ref: row.reference_month, due: brDate(row.due_date),
+            person: row.full_name, ref: row.reference_month, due: brDate(row.due_date),
             expected: row.expected_amount, paid: row.paid_amount, paidAt: brDate(row.paid_at),
             method: row.method, status: label(row.status), notes: row.notes,
           })),
@@ -143,7 +143,7 @@ async function buildSheets(c: Context<AppBindings>, kind: string): Promise<Sheet
         query(
           c,
           `SELECT d.*, p.full_name FROM monthly_dues d
-             JOIN players pl ON pl.id = d.player_id JOIN people p ON p.id = pl.person_id
+             JOIN people p ON p.id = d.person_id
             WHERE d.club_id = ? ORDER BY d.reference_month DESC`,
           clubId,
         ),

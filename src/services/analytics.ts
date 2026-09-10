@@ -49,7 +49,8 @@ export interface CategorySlice {
 
 export interface OpenDue {
   id: string;
-  player: string;
+  person: string;
+  personId: string;
   amount: number;
   dueDate: string;
   status: string;

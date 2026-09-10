@@ -90,7 +90,7 @@ export function DuesPanel({
           <ul className="flex flex-col gap-2.5">
             {open.map((due) => (
               <li key={due.id} className="flex items-center justify-between gap-3">
-                <span className="min-w-0 flex-1 truncate text-[13px] text-ink-muted">{due.player}</span>
+                <span className="min-w-0 flex-1 truncate text-[13px] text-ink-muted">{due.person}</span>
                 <span className="tabular shrink-0 text-2xs text-ink">{currency(due.amount)}</span>
                 <span
                   className={cn('h-1.5 w-1.5 shrink-0 rounded-full', TONE_BG[statusTone(due.status)])}

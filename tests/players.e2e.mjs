@@ -201,7 +201,8 @@ const due = await call('/api/finance/dues', {
   method: 'POST',
   cookie: admin,
   body: {
-    playerId: player.id,
+    // Dues belong to the person behind the squad record.
+    personId: player.personId,
     referenceMonth: '2026-09',
     dueDate: '2026-09-15',
     expectedAmount: 250,

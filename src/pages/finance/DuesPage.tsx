@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Plus, Sparkles } from 'lucide-react';
 import { PageTransition } from '@/components/motion/PageTransition';
 import { PageHeader } from '@/layouts/PageHeader';
@@ -11,23 +10,24 @@ import { FormModal, FormSection } from '@/components/data/FormModal';
 import { StatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { DatePicker, Field, Input, Select, Textarea } from '@/components/ui/Field';
+import { PersonPicker, roleSummary } from './PersonPicker';
 import { useAsync } from '@/hooks/useAsync';
 import { useToast } from '@/components/ui/Toast';
 import { runSubmit } from '@/lib/submit';
 import { useDisclosure } from '@/hooks/useDisclosure';
 import { useTableState } from '@/hooks/useTableState';
-import { duesRepo, playersRepo } from '@/services';
+import { duesRepo, peopleRepo } from '@/services';
 import { apiFetch, ApiError } from '@/services/api';
 import { currentMonthRef } from '@/services/analytics';
 import { formatDate, formatMonthRef } from '@/lib/dates';
 import { currency } from '@/lib/format';
-import type { MonthlyDue, PaymentMethod, Player } from '@/types/domain';
+import type { MonthlyDue, PaymentMethod, Person } from '@/types/domain';
 
 const STATUSES = ['pago', 'pendente', 'parcial', 'atrasado'];
 const METHODS: PaymentMethod[] = ['Pix', 'Dinheiro', 'Transferência', 'Cartão', 'Boleto'];
 
 const emptyForm = {
-  playerId: '',
+  personId: '',
   referenceMonth: currentMonthRef(),
   dueDate: '',
   expectedAmount: '180',
@@ -39,8 +39,10 @@ const emptyForm = {
 
 export default function DuesPage() {
   const { data, status, reload } = useAsync(() => duesRepo.list(), []);
-  const squad = useAsync(() => playersRepo.list(), []);
-  const players = squad.data ?? [];
+  // The charge belongs to a person, so this screen picks from the registry
+  // rather than from the squad.
+  const registry = useAsync(() => peopleRepo.list(), []);
+  const people = registry.data ?? [];
   const form = useDisclosure();
   const toast = useToast();
   const [values, setValues] = useState(emptyForm);
@@ -51,18 +53,29 @@ export default function DuesPage() {
     return refs.map((ref) => ({ value: ref, label: formatMonthRef(ref) }));
   }, [data]);
 
-  const table = useTableState<MonthlyDue>(data, ['referenceMonth', 'status'], {
+  const table = useTableState<MonthlyDue>(data, ['referenceMonth', 'status', 'personId'], {
     pageSize: 12,
     initialSort: { key: 'dueDate', direction: 'desc' },
     initialFilters: { referenceMonth: currentMonthRef() },
   });
 
-  // The API denormalises the player's name onto each due, so search stays local.
+  // The API denormalises the person's name onto each due, so search stays local.
   const rows = useMemo(() => {
     const needle = table.search.trim().toLowerCase();
     if (!needle) return table.rows;
-    return table.rows.filter((due) => (due.playerName ?? '').toLowerCase().includes(needle));
+    return table.rows.filter((due) =>
+      [due.personName, due.personNickname]
+        .filter(Boolean)
+        .some((field) => String(field).toLowerCase().includes(needle)),
+    );
   }, [table.rows, table.search]);
+
+  // Only people who actually have a charge are worth offering as a filter.
+  const payers = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const due of data ?? []) seen.set(due.personId, due.personName ?? '—');
+    return [...seen].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [data]);
 
   const scoped = (data ?? []).filter(
     (due) => !table.filters.referenceMonth || table.filters.referenceMonth === 'todos' || due.referenceMonth === table.filters.referenceMonth,
@@ -73,16 +86,15 @@ export default function DuesPage() {
 
   const columns: Column<MonthlyDue>[] = [
     {
-      key: 'playerId',
-      header: 'Jogador',
+      key: 'personId',
+      header: 'Pessoa',
       render: (due) => (
-        <Link
-          to={`/app/jogadores/${due.playerId}`}
-          onClick={(event) => event.stopPropagation()}
-          className="text-[13px] text-ink transition-colors duration-150 hover:text-gold"
-        >
-          {due.playerName ?? '—'}
-        </Link>
+        <span className="block min-w-0">
+          <span className="block truncate text-[13px] text-ink">{due.personName ?? '—'}</span>
+          {roleSummary(due.personRoles) && (
+            <span className="block truncate text-2xs text-ink-faint">{roleSummary(due.personRoles)}</span>
+          )}
+        </span>
       ),
     },
     { key: 'referenceMonth', header: 'Referência', sortable: true, render: (due) => formatMonthRef(due.referenceMonth) },
@@ -112,7 +124,7 @@ export default function DuesPage() {
 
   const submit = async () => {
     const nextErrors: Record<string, string> = {};
-    if (!values.playerId) nextErrors.playerId = 'Selecione o jogador.';
+    if (!values.personId) nextErrors.personId = 'Selecione a pessoa.';
     if (!values.dueDate) nextErrors.dueDate = 'Informe o vencimento.';
     if (Number(values.expectedAmount) <= 0) nextErrors.expectedAmount = 'Informe um valor válido.';
     setErrors(nextErrors);
@@ -121,7 +133,7 @@ export default function DuesPage() {
     const ok = await runSubmit(
       async () => {
         await duesRepo.create({
-          playerId: values.playerId,
+          personId: values.personId,
           referenceMonth: values.referenceMonth,
           dueDate: values.dueDate,
           expectedAmount: values.expectedAmount,
@@ -152,8 +164,8 @@ export default function DuesPage() {
       toast.success(
         result.created > 0 ? `${result.created} mensalidades geradas` : 'Nada a gerar',
         result.created > 0
-          ? 'Uma cobrança para cada jogador ainda sem lançamento no mês.'
-          : 'Todos os jogadores já possuem cobrança neste mês.',
+          ? 'Uma cobrança para cada pessoa habilitada ainda sem lançamento no mês.'
+          : 'Todas as pessoas habilitadas já possuem cobrança neste mês.',
       );
     } catch (cause) {
       toast.error('Não foi possível gerar', cause instanceof ApiError ? cause.message : undefined);
@@ -167,7 +179,7 @@ export default function DuesPage() {
       <PageHeader
         eyebrow="Financeiro"
         title="Mensalidades"
-        description="Controle das contribuições do elenco por competência, com situação de cada cobrança."
+        description="Cobranças por competência. A mensalidade pertence à pessoa: quem tem mais de um vínculo no clube paga uma vez só."
         actions={
           <>
             <Button variant="secondary" icon={<Sparkles />} loading={generating} onClick={generateMonth}>
@@ -217,11 +229,11 @@ export default function DuesPage() {
           <FilterBar
             search={table.search}
             onSearch={table.setSearch}
-            searchPlaceholder="Buscar por jogador…"
+            searchPlaceholder="Buscar por pessoa…"
             filters={[
               { key: 'referenceMonth', label: 'Período', options: months },
               { key: 'status', label: 'Status', options: STATUSES.map((value) => ({ value, label: value })) },
-              { key: 'playerId', label: 'Jogador', options: players.map((player: Player) => ({ value: player.id, label: player.name })) },
+              { key: 'personId', label: 'Pessoa', options: payers },
             ]}
             values={table.filters}
             onFilter={table.setFilter}
@@ -248,22 +260,31 @@ export default function DuesPage() {
         onSubmit={submit}
       >
         <FormSection title="Cobrança">
-          <Field label="Jogador" required error={errors.playerId}>
+          <Field
+            label="Pessoa"
+            required
+            error={errors.personId}
+            hint="Qualquer pessoa cadastrada pode ser cobrada, tenha ou não vínculo esportivo."
+            className="sm:col-span-2"
+          >
             {({ id, invalid }) => (
-              <Select
+              <PersonPicker
                 id={id}
                 invalid={invalid}
-                value={values.playerId}
-                placeholder="Selecione o jogador"
-                onChange={(e) => {
-                  const player = players.find((item: Player) => item.id === e.target.value);
+                people={people}
+                value={values.personId}
+                onChange={(person: Person) =>
                   setValues({
                     ...values,
-                    playerId: e.target.value,
-                    expectedAmount: player ? String(player.monthlyFee) : values.expectedAmount,
-                  });
-                }}
-                options={players.map((player: Player) => ({ value: player.id, label: player.name }))}
+                    personId: person.id,
+                    // The person's settings are defaults for a new charge; an
+                    // amount already typed is left alone.
+                    expectedAmount: person.id ? String(person.monthlyFee || values.expectedAmount) : values.expectedAmount,
+                    dueDate: person.id && !values.dueDate
+                      ? `${values.referenceMonth}-${String(Math.min(person.dueDay, 28)).padStart(2, '0')}`
+                      : values.dueDate,
+                  })
+                }
               />
             )}
           </Field>

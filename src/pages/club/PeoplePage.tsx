@@ -18,6 +18,7 @@ import { useDisclosure } from '@/hooks/useDisclosure';
 import { useTableState } from '@/hooks/useTableState';
 import { peopleRepo } from '@/services';
 import { age, formatDate } from '@/lib/dates';
+import { currency } from '@/lib/format';
 import type { Person } from '@/types/domain';
 
 const ROLE_LABELS: Record<string, string> = {
@@ -28,7 +29,10 @@ const ROLE_LABELS: Record<string, string> = {
   outro: 'Outro',
 };
 
-const emptyForm = { fullName: '', nickname: '', birthDate: '', phone: '', email: '', document: '', city: '', role: 'jogador', notes: '' };
+const emptyForm = {
+  fullName: '', nickname: '', birthDate: '', phone: '', email: '', document: '', city: '',
+  role: 'jogador', monthlyFeeEnabled: false, monthlyFee: '', dueDay: '10', notes: '',
+};
 
 export default function PeoplePage() {
   const { data, status, reload } = useAsync(() => peopleRepo.list(), []);
@@ -57,6 +61,9 @@ export default function PeoplePage() {
       document: person.document ?? '',
       city: person.city ?? '',
       role: person.roles[0] ?? 'jogador',
+      monthlyFeeEnabled: person.monthlyFeeEnabled,
+      monthlyFee: person.monthlyFee ? String(person.monthlyFee) : '',
+      dueDay: String(person.dueDay ?? 10),
       notes: person.notes ?? '',
     });
     setErrors({});
@@ -106,6 +113,20 @@ export default function PeoplePage() {
       secondary: true,
       render: (person) => <span className="tabular">{age(person.birthDate) ?? '—'}</span>,
     },
+    {
+      key: 'monthlyFeeEnabled',
+      header: 'Mensalidade',
+      align: 'right',
+      secondary: true,
+      render: (person) =>
+        person.monthlyFeeEnabled ? (
+          <span className="tabular text-ink-muted">
+            {currency(person.monthlyFee)} <span className="text-ink-ghost">dia {person.dueDay}</span>
+          </span>
+        ) : (
+          <span className="text-ink-ghost">—</span>
+        ),
+    },
     { key: 'status', header: 'Status', align: 'right', render: (person) => <StatusBadge status={person.status} /> },
   ];
 
@@ -124,6 +145,9 @@ export default function PeoplePage() {
       email: values.email,
       document: values.document,
       city: values.city,
+      monthlyFeeEnabled: values.monthlyFeeEnabled,
+      monthlyFee: values.monthlyFee || 0,
+      dueDay: values.dueDay || 10,
       notes: values.notes,
       status: 'ativo',
     };
@@ -352,6 +376,52 @@ export default function PeoplePage() {
                 id={id}
                 value={values.city}
                 onChange={(event) => setValues({ ...values, city: event.target.value })}
+              />
+            )}
+          </Field>
+        </FormSection>
+
+        <FormSection
+          title="Mensalidade"
+          description="A cobrança pertence à pessoa. Quem tem mais de um vínculo no clube continua pagando uma única mensalidade."
+        >
+          <Field label="Participa da cobrança" className="sm:col-span-2">
+            {({ id }) => (
+              <Select
+                id={id}
+                value={values.monthlyFeeEnabled ? 'sim' : 'nao'}
+                onChange={(e) => setValues({ ...values, monthlyFeeEnabled: e.target.value === 'sim' })}
+                options={[
+                  { value: 'nao', label: 'Não' },
+                  { value: 'sim', label: 'Sim' },
+                ]}
+              />
+            )}
+          </Field>
+          <Field label="Valor padrão" hint="Usado apenas em novas cobranças.">
+            {({ id }) => (
+              <Input
+                id={id}
+                type="number"
+                min={0}
+                step="10"
+                value={values.monthlyFee}
+                onChange={(e) => setValues({ ...values, monthlyFee: e.target.value })}
+                placeholder="0,00"
+                disabled={!values.monthlyFeeEnabled}
+              />
+            )}
+          </Field>
+          <Field label="Dia do vencimento">
+            {({ id }) => (
+              <Input
+                id={id}
+                type="number"
+                min={1}
+                max={31}
+                value={values.dueDay}
+                onChange={(e) => setValues({ ...values, dueDay: e.target.value })}
+                disabled={!values.monthlyFeeEnabled}
               />
             )}
           </Field>

@@ -130,10 +130,10 @@ dashboard.get('/overview', requirePermission('dashboard.view'), async (c) => {
         'SELECT * FROM inventory_items WHERE club_id = ? AND quantity < min_quantity ORDER BY quantity LIMIT 4',
       ).bind(clubId).all(),
       db.prepare(
-        `SELECT d.id, d.expected_amount, d.paid_amount, d.due_date, d.status, p.full_name AS player_name
+        `SELECT d.id, d.expected_amount, d.paid_amount, d.due_date, d.status, d.person_id,
+                p.full_name AS person_name
            FROM monthly_dues d
-           JOIN players pl ON pl.id = d.player_id
-           JOIN people p ON p.id = pl.person_id
+           JOIN people p ON p.id = d.person_id
           WHERE d.club_id = ? AND d.reference_month = ? AND d.status <> 'pago'
           ORDER BY d.due_date LIMIT 4`,
       ).bind(clubId, ref).all(),
@@ -151,7 +151,8 @@ dashboard.get('/overview', requirePermission('dashboard.view'), async (c) => {
     lowStock: lowStock.results.map(mapInventoryItem),
     openDues: openDues.results.map((row: any) => ({
       id: String(row.id),
-      player: String(row.player_name),
+      person: String(row.person_name),
+      personId: String(row.person_id),
       amount: Number(row.expected_amount) - Number(row.paid_amount),
       dueDate: String(row.due_date),
       status: String(row.status),

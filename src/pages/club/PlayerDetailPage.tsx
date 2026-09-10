@@ -31,10 +31,17 @@ export default function PlayerDetailPage() {
   const [tab, setTab] = useState('ficha');
 
   const player = useAsync(() => playersRepo.get(playerId), [playerId]);
+  // Dues belong to the person behind the squad record, so they are matched by
+  // person: an athlete who is also a director still has a single set of charges.
+  const personId = player.data?.personId;
   const dues = useAsync(
     async () =>
-      (await duesRepo.list()).filter((due) => due.playerId === playerId).sort((a, b) => b.referenceMonth.localeCompare(a.referenceMonth)),
-    [playerId],
+      !personId
+        ? []
+        : (await duesRepo.list())
+            .filter((due) => due.personId === personId)
+            .sort((a, b) => b.referenceMonth.localeCompare(a.referenceMonth)),
+    [personId],
   );
   const appearances = useAsync(async () => {
     const [lineups, matches] = await Promise.all([lineupsRepo.list(), matchesRepo.list()]);

@@ -18,11 +18,17 @@ import {
 
 const finance = new Hono<AppBindings>();
 
+/**
+ * A due names the person who owes it, plus the links that person holds, so the
+ * screen can show "João Silva · Jogador, Diretoria" without a second round trip.
+ */
 const DUE_SELECT = `
-  SELECT d.*, p.full_name AS player_name
+  SELECT d.*, p.full_name AS person_name, p.nickname AS person_nickname,
+         EXISTS (SELECT 1 FROM players       x WHERE x.person_id = p.id) AS is_player,
+         EXISTS (SELECT 1 FROM board_members x WHERE x.person_id = p.id) AS is_board,
+         EXISTS (SELECT 1 FROM staff_members x WHERE x.person_id = p.id) AS is_staff
     FROM monthly_dues d
-    JOIN players pl ON pl.id = d.player_id
-    JOIN people p ON p.id = pl.person_id
+    JOIN people p ON p.id = d.person_id
 `;
 
 /** Status is derived from the amounts and the due date, never trusted from the client. */
@@ -36,7 +42,7 @@ function dueStatus(expected: number, paid: number, dueDate: string): string {
 /* ============================================================== dues */
 
 const dueSchema = z.object({
-  playerId: requiredText('O jogador', 60),
+  personId: requiredText('A pessoa', 60),
   referenceMonth: monthRef,
   dueDate: isoDate,
   expectedAmount: money,
@@ -59,25 +65,28 @@ finance.post('/dues', requirePermission('finance.create'), async (c) => {
   const body = await parseBody(c.req.raw, dueSchema);
   const clubId = c.get('clubId');
 
-  const player = await c.env.DB.prepare('SELECT id FROM players WHERE id=? AND club_id=?')
-    .bind(body.playerId, clubId).first();
-  if (!player) throw notFound('Jogador não encontrado.');
+  const person = await c.env.DB.prepare('SELECT id FROM people WHERE id=? AND club_id=?')
+    .bind(body.personId, clubId).first();
+  if (!person) throw notFound('Pessoa não encontrada.');
 
+  // `monthly_fee_enabled` governs who the monthly generation picks up. Raising a
+  // single charge by hand is a deliberate act, so it is not gated by the flag —
+  // otherwise a one-off cobrança would mean editing the person first.
   const duplicate = await c.env.DB.prepare(
-    'SELECT id FROM monthly_dues WHERE player_id=? AND reference_month=?',
-  ).bind(body.playerId, body.referenceMonth).first();
-  if (duplicate) throw conflict('Já existe uma mensalidade deste jogador para o mês informado.');
+    'SELECT id FROM monthly_dues WHERE person_id=? AND reference_month=?',
+  ).bind(body.personId, body.referenceMonth).first();
+  if (duplicate) throw conflict('Já existe uma mensalidade desta pessoa para o mês informado.');
 
   const now = nowIso();
   const id = newId('due');
   const status = dueStatus(body.expectedAmount, body.paidAmount, body.dueDate);
 
   await c.env.DB.prepare(
-    `INSERT INTO monthly_dues (id, club_id, player_id, reference_month, due_date, expected_amount,
+    `INSERT INTO monthly_dues (id, club_id, person_id, reference_month, due_date, expected_amount,
                                paid_amount, paid_at, method, status, notes, created_at, updated_at)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   )
-    .bind(id, clubId, body.playerId, body.referenceMonth, body.dueDate, body.expectedAmount,
+    .bind(id, clubId, body.personId, body.referenceMonth, body.dueDate, body.expectedAmount,
       body.paidAmount, body.paidAt, body.method, status, body.notes, now, now)
     .run();
 
@@ -86,7 +95,7 @@ finance.post('/dues', requirePermission('finance.create'), async (c) => {
   await logActivity(c.env, c.get('session'), {
     kind: 'financeiro',
     title: body.paidAmount > 0 ? 'Mensalidade registrada' : 'Mensalidade lançada',
-    detail: `${due.playerName} — ${due.referenceMonth}`,
+    detail: `${due.personName} — ${due.referenceMonth}`,
   });
   return c.json({ data: due }, 201);
 });
@@ -119,32 +128,36 @@ finance.delete('/dues/:id', requirePermission('finance.delete'), async (c) => {
 });
 
 /**
- * Generates the month's dues for every billable player, skipping anyone who
- * already has one — so running it twice is safe.
+ * Generates the month's dues for every person marked as paying a monthly fee,
+ * skipping anyone who already has one — so running it twice is safe.
+ *
+ * Membership links are irrelevant here: a director, a coach and a player are all
+ * picked up if their person is flagged, and someone who holds three links is
+ * still charged once, because the charge hangs off the person.
  */
 finance.post('/dues/generate', requirePermission('finance.create'), async (c) => {
   const body = await parseBody(c.req.raw, z.object({ referenceMonth: monthRef }));
   const clubId = c.get('clubId');
   const [year, month] = body.referenceMonth.split('-').map(Number);
 
-  const players = await c.env.DB.prepare(
-    `SELECT pl.id, pl.monthly_fee, pl.due_day FROM players pl
-      WHERE pl.club_id = ? AND pl.status NOT IN ('inativo')
-        AND NOT EXISTS (SELECT 1 FROM monthly_dues d WHERE d.player_id = pl.id AND d.reference_month = ?)`,
+  const payers = await c.env.DB.prepare(
+    `SELECT p.id, p.monthly_fee, p.due_day FROM people p
+      WHERE p.club_id = ? AND p.monthly_fee_enabled = 1 AND p.status = 'ativo'
+        AND NOT EXISTS (SELECT 1 FROM monthly_dues d WHERE d.person_id = p.id AND d.reference_month = ?)`,
   ).bind(clubId, body.referenceMonth).all<{ id: string; monthly_fee: number; due_day: number }>();
 
-  if (players.results.length === 0) return c.json({ created: 0 });
+  if (payers.results.length === 0) return c.json({ created: 0 });
 
   const now = nowIso();
-  const statements = players.results.map((player) => {
-    const day = Math.min(Math.max(player.due_day, 1), 28);
+  const statements = payers.results.map((payer) => {
+    const day = Math.min(Math.max(payer.due_day, 1), 28);
     const dueDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     return c.env.DB.prepare(
-      `INSERT INTO monthly_dues (id, club_id, player_id, reference_month, due_date, expected_amount,
+      `INSERT INTO monthly_dues (id, club_id, person_id, reference_month, due_date, expected_amount,
                                  paid_amount, status, created_at, updated_at)
        VALUES (?,?,?,?,?,?,0,?,?,?)`,
-    ).bind(newId('due'), clubId, player.id, body.referenceMonth, dueDate, player.monthly_fee,
-      dueStatus(player.monthly_fee, 0, dueDate), now, now);
+    ).bind(newId('due'), clubId, payer.id, body.referenceMonth, dueDate, payer.monthly_fee,
+      dueStatus(payer.monthly_fee, 0, dueDate), now, now);
   });
 
   await c.env.DB.batch(statements);

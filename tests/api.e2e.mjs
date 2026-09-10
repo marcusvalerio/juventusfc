@@ -185,14 +185,14 @@ check('posição secundária persistida', res.body?.data?.secondaryPosition === 
 console.log('\n== 8. financeiro ==');
 res = await call('/api/finance/dues', {
   method: 'POST',
-  body: { playerId, referenceMonth: '2026-09', dueDate: '2026-09-15', expectedAmount: 220, paidAmount: 220, paidAt: '2026-09-10', method: 'Pix' },
+  body: { personId, referenceMonth: '2026-09', dueDate: '2026-09-15', expectedAmount: 220, paidAmount: 220, paidAt: '2026-09-10', method: 'Pix' },
 });
 check('lança mensalidade paga', res.status === 201 && res.body?.data?.status === 'pago', JSON.stringify(res.body));
-check('mensalidade traz o nome do jogador', res.body?.data?.playerName === 'Diego Marchetti');
+check('mensalidade traz o nome da pessoa', res.body?.data?.personName === 'Diego Marchetti');
 
 res = await call('/api/finance/dues', {
   method: 'POST',
-  body: { playerId, referenceMonth: '2026-09', dueDate: '2026-09-15', expectedAmount: 220 },
+  body: { personId, referenceMonth: '2026-09', dueDate: '2026-09-15', expectedAmount: 220 },
 });
 check('impede mensalidade duplicada no mesmo mês', res.status === 409);
 

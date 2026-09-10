@@ -37,6 +37,14 @@ export interface Person extends Entity {
   city?: string;
   status: PersonStatus;
   notes?: string;
+  /**
+   * Whether this person is picked up by the monthly generation. Registration
+   * alone does not make someone a paying member.
+   */
+  monthlyFeeEnabled: boolean;
+  /** Defaults for new charges only; a due already raised keeps its own values. */
+  monthlyFee: number;
+  dueDay: number; // 1-31
   /** Derived server-side from the membership tables; never stored on the row. */
   roles: MembershipRole[];
   /** Whether an access account is linked to this person. */
@@ -75,8 +83,10 @@ export interface Player extends Entity {
   birthDate?: ISODate;
   phone?: string;
   joinedAt: ISODate;
+  /** Read from the person, which owns the billing settings. */
   monthlyFee: number;
   dueDay: number; // 1-31
+  monthlyFeeEnabled?: boolean;
   status: SquadStatus;
   notes?: string;
   history?: PlayerHistory;
@@ -202,9 +212,16 @@ export type DueStatus = 'pago' | 'pendente' | 'parcial' | 'atrasado';
 export type PaymentMethod = 'Pix' | 'Dinheiro' | 'Transferência' | 'Cartão' | 'Boleto';
 
 export interface MonthlyDue extends Entity {
-  playerId: ID;
-  /** Resolved player name, denormalised by the API. */
-  playerName?: string;
+  /**
+   * The charge belongs to the person, not to a squad record: someone who is
+   * both player and director is billed once.
+   */
+  personId: ID;
+  /** Resolved by the API so the table needs no second request. */
+  personName?: string;
+  personNickname?: string;
+  /** Links the person holds at the club, shown beside the name. */
+  personRoles?: MembershipRole[];
   referenceMonth: string; // YYYY-MM
   dueDate: ISODate;
   expectedAmount: number;

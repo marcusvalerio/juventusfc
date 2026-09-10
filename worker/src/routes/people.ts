@@ -5,7 +5,7 @@ import { newId, nowIso } from '../lib/id';
 import { mapPerson } from '../lib/mappers';
 import { requirePermission } from '../lib/middleware';
 import { logActivity } from '../lib/activity';
-import { optionalIsoDate, optionalText, parseBody, requiredText, z } from '../lib/validate';
+import { money, optionalIsoDate, optionalText, parseBody, requiredText, z } from '../lib/validate';
 
 const people = new Hono<AppBindings>();
 
@@ -44,6 +44,12 @@ const personSchema = z.object({
   address: optionalText(240),
   city: optionalText(120),
   status: z.enum(['ativo', 'inativo']).default('ativo'),
+  // Billing settings. `monthlyFeeEnabled` decides who the monthly generation
+  // picks up; the amount and day are defaults for new charges only and never
+  // reach a due that was already raised.
+  monthlyFeeEnabled: z.coerce.boolean().default(false),
+  monthlyFee: money.default(0),
+  dueDay: z.coerce.number().int().min(1).max(31).default(10),
   notes: optionalText(2000),
 });
 
@@ -55,8 +61,9 @@ people.post('/', requirePermission('people.create'), async (c) => {
 
   await c.env.DB.prepare(
     `INSERT INTO people (id, club_id, full_name, nickname, birth_date, phone, email, document,
-                         address, city, status, notes, created_at, updated_at)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                         address, city, status, monthly_fee_enabled, monthly_fee, due_day,
+                         notes, created_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   )
     .bind(
       id,
@@ -70,6 +77,9 @@ people.post('/', requirePermission('people.create'), async (c) => {
       body.address,
       body.city,
       body.status,
+      body.monthlyFeeEnabled ? 1 : 0,
+      body.monthlyFee,
+      body.dueDay,
       body.notes,
       now,
       now,
@@ -100,7 +110,8 @@ people.put('/:id', requirePermission('people.edit'), async (c) => {
 
   await c.env.DB.prepare(
     `UPDATE people SET full_name=?, nickname=?, birth_date=?, phone=?, email=?, document=?,
-                       address=?, city=?, status=?, notes=?, updated_at=?
+                       address=?, city=?, status=?, monthly_fee_enabled=?, monthly_fee=?,
+                       due_day=?, notes=?, updated_at=?
       WHERE id=? AND club_id=?`,
   )
     .bind(
@@ -113,6 +124,9 @@ people.put('/:id', requirePermission('people.edit'), async (c) => {
       body.address,
       body.city,
       body.status,
+      body.monthlyFeeEnabled ? 1 : 0,
+      body.monthlyFee,
+      body.dueDay,
       body.notes,
       nowIso(),
       id,
@@ -152,6 +166,18 @@ people.delete('/:id', requirePermission('people.delete'), async (c) => {
   }
   if (person.hasAccount) {
     throw conflict('Esta pessoa possui uma conta de acesso. Remova a conta antes de excluir.');
+  }
+
+  // Dues hang off the person and cascade with her, so a financial record is a
+  // reason to refuse the delete rather than something to take down quietly.
+  const dues = await c.env.DB.prepare(
+    'SELECT COUNT(*) AS total FROM monthly_dues WHERE person_id = ?',
+  ).bind(id).first<{ total: number }>();
+  if (Number(dues?.total ?? 0) > 0) {
+    throw conflict(
+      'Esta pessoa possui mensalidades lançadas. Exclua as cobranças antes de remover o cadastro.',
+      { dues: String(dues?.total ?? 0) },
+    );
   }
 
   await c.env.DB.prepare('DELETE FROM people WHERE id = ? AND club_id = ?').bind(id, clubId).run();

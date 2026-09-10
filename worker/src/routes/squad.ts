@@ -14,7 +14,9 @@ const squad = new Hono<AppBindings>();
  * from `people` through the join, so editing the person updates every role.
  */
 const PLAYER_SELECT = `
-  SELECT pl.*, p.full_name, p.nickname, p.birth_date, p.phone, t.name AS team_name
+  SELECT pl.*, p.full_name, p.nickname, p.birth_date, p.phone, t.name AS team_name,
+         p.monthly_fee AS person_monthly_fee, p.due_day AS person_due_day,
+         p.monthly_fee_enabled AS person_fee_enabled
     FROM players pl
     JOIN people p ON p.id = pl.person_id
     LEFT JOIN teams t ON t.id = pl.team_id
@@ -77,21 +79,26 @@ export interface PlayerHistory {
 }
 
 /**
- * How much of the club's record depends on this player.
+ * How much of the club's record stands behind this player.
  *
- * Every one of these tables cascades on delete, so removing a player row would
- * silently take his dues, his call-ups and his attendance with it. Counting
- * first is what lets the delete route choose between erasing a mistake and
+ * Line-ups and attendance cascade from `players`, so deleting the row would
+ * take them with it. Dues no longer do — they belong to the person — but a
+ * member who has been billed has a real history in the squad, so they count
+ * here too. Either way the answer decides between erasing a mistaken entry and
  * retiring a career.
  */
-async function playerHistory(db: D1Database, playerId: string): Promise<PlayerHistory> {
+async function playerHistory(
+  db: D1Database,
+  playerId: string,
+  personId: string,
+): Promise<PlayerHistory> {
   const row = await db
     .prepare(
-      `SELECT (SELECT COUNT(*) FROM monthly_dues WHERE player_id = ?)          AS dues,
+      `SELECT (SELECT COUNT(*) FROM monthly_dues WHERE person_id = ?)          AS dues,
               (SELECT COUNT(*) FROM lineup_entries WHERE player_id = ?)        AS lineups,
               (SELECT COUNT(*) FROM training_participants WHERE player_id = ?) AS trainings`,
     )
-    .bind(playerId, playerId, playerId)
+    .bind(personId, playerId, playerId)
     .first<{ dues: number; lineups: number; trainings: number }>();
 
   const dues = Number(row?.dues ?? 0);
@@ -133,7 +140,9 @@ squad.get('/players/:id', requirePermission('squad.view'), async (c) => {
   if (!row) throw notFound('Jogador não encontrado.');
   // `history` rides along on the detail read only: the list stays a single
   // query, and the screen that needs the counts already fetches this row.
-  return c.json({ data: { ...mapPlayer(row), history: await playerHistory(c.env.DB, id) } });
+  return c.json({
+    data: { ...mapPlayer(row), history: await playerHistory(c.env.DB, id, String(row.person_id)) },
+  });
 });
 
 squad.post('/players', requirePermission('squad.create'), async (c) => {
@@ -145,6 +154,14 @@ squad.post('/players', requirePermission('squad.create'), async (c) => {
     .bind(personId)
     .first();
   if (duplicate) throw conflict('Esta pessoa já está cadastrada como jogador.');
+
+  // Joining the squad makes someone a paying member by default, and the amount
+  // belongs to the person — that is where the monthly generation reads it.
+  await c.env.DB.prepare(
+    'UPDATE people SET monthly_fee_enabled=1, monthly_fee=?, due_day=?, updated_at=? WHERE id=? AND club_id=?',
+  )
+    .bind(body.monthlyFee, body.dueDay, nowIso(), personId, clubId)
+    .run();
 
   const now = nowIso();
   const id = newId('ply');
@@ -189,13 +206,22 @@ squad.put('/players/:id', requirePermission('squad.edit'), async (c) => {
     )
     .run();
 
-  // Personal fields belong to the person record, so they are written there.
+  // Personal fields — and the billing defaults, which the person owns — are
+  // written on the person record, so every screen reads the same numbers.
   if (body.fullName) {
     await c.env.DB.prepare(
-      'UPDATE people SET full_name=?, nickname=?, birth_date=?, phone=?, updated_at=? WHERE id=? AND club_id=?',
+      `UPDATE people SET full_name=?, nickname=?, birth_date=?, phone=?,
+                         monthly_fee=?, due_day=?, updated_at=?
+        WHERE id=? AND club_id=?`,
     )
-      .bind(body.fullName, body.nickname, body.birthDate, body.phone, now, existing.person_id, clubId)
+      .bind(body.fullName, body.nickname, body.birthDate, body.phone, body.monthlyFee,
+        body.dueDay, now, existing.person_id, clubId)
       .run();
+  } else {
+    await c.env.DB.prepare(
+      'UPDATE people SET monthly_fee=?, due_day=?, updated_at=? WHERE id=? AND club_id=?',
+    )
+      .bind(body.monthlyFee, body.dueDay, now, existing.person_id, clubId).run();
   }
 
   const row = await c.env.DB.prepare(`${PLAYER_SELECT} WHERE pl.id = ?`).bind(id).first();
@@ -209,14 +235,14 @@ squad.put('/players/:id', requirePermission('squad.edit'), async (c) => {
 /**
  * Leaving the squad.
  *
- * `monthly_dues`, `lineup_entries` and `training_participants` all cascade from
- * `players`, so a physical delete does not just remove an athlete — it rewrites
- * the club's financial and sporting history. A player who has any of that is
- * therefore retired (status `inativo`), which is the same flag the squad form
- * already offers; only a record with nothing attached is actually deleted.
+ * `lineup_entries` and `training_participants` cascade from `players`, so a
+ * physical delete does not just remove an athlete — it rewrites the club's
+ * sporting record. A player with any history behind them is therefore retired
+ * (status `inativo`), which is the same flag the squad form already offers;
+ * only a record with nothing attached is actually deleted.
  *
  * The person is never touched. She stays in the central register with whatever
- * other roles she holds.
+ * other links she holds — and so do her dues, which are hers, not the squad's.
  */
 squad.delete('/players/:id', requirePermission('squad.delete'), async (c) => {
   const id = c.req.param('id');
@@ -227,7 +253,7 @@ squad.delete('/players/:id', requirePermission('squad.delete'), async (c) => {
   if (!row) throw notFound('Jogador não encontrado.');
 
   const player = mapPlayer(row);
-  const history = await playerHistory(c.env.DB, id);
+  const history = await playerHistory(c.env.DB, id, String(row.person_id));
 
   if (history.total > 0) {
     await c.env.DB.prepare('UPDATE players SET status = ?, updated_at = ? WHERE id = ? AND club_id = ?')

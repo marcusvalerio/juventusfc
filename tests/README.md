@@ -22,6 +22,8 @@ npm run test:first-access   # fluxo de primeiro acesso, casos A–G (38)
 npm run test:mascot         # mascote: movimento, fallbacks e acessibilidade (72)
 npm run test:password-reset # recuperação de senha, ponta a ponta (55)
 npm run test:players        # editar e retirar jogadores do elenco (61)
+npm run test:dues           # mensalidades por pessoa, casos 1–10 (51)
+npm run test:migration      # migração 0003 contra um banco descartável (20)
 ```
 
 O roteiro de jogadores cobre a edição (mesma pessoa, mesmo registro, campo a
@@ -52,6 +54,17 @@ WORKER_LOG=/tmp/worker.log npm run test:password-reset
 ```
 
 Sem `WORKER_LOG` o roteiro falha essas duas verificações em vez de pulá-las.
+
+O roteiro de mensalidades cobre quem pode ser cobrado — jogador, diretoria,
+comissão e pessoa sem vínculo esportivo —, a pessoa com dois vínculos recebendo
+uma única cobrança, a geração do mês respeitando `monthly_fee_enabled`, o bloqueio
+de duplicidade, e o fato de editar ou excluir uma cobrança não tocar na pessoa
+nem nos seus vínculos.
+
+`test:migration` é o único roteiro que não precisa do Worker: ele executa os
+arquivos de migration contra um SQLite descartável, semeia um clube no formato
+antigo — com mensalidades presas ao jogador — e verifica que a 0003 não perde,
+cria nem altera nenhuma cobrança ao movê-las para a pessoa.
 
 Variáveis opcionais: `API_BASE`, `UI_BASE` (padrão `http://127.0.0.1:8787`) e
 `SHOTS` (diretório das capturas de tela do teste de UI).

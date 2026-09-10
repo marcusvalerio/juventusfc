@@ -20,6 +20,8 @@
     "test:first-access": "node tests/first-access.e2e.mjs",
     "test:mascot": "node tests/mascot.e2e.mjs",
     "test:players": "node tests/players.e2e.mjs",
+    "test:dues": "node tests/dues.e2e.mjs",
+    "test:migration": "node tests/migration.e2e.mjs",
     "test:password-reset": "node tests/password-reset.e2e.mjs"
   },
   "dependencies": {

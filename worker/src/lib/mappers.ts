@@ -3,7 +3,7 @@
  *
  * The API answers in exactly the shapes the SPA already consumes
  * (`src/types/domain.ts`), including denormalised display names such as
- * `playerName` on a due. That keeps table renderers synchronous: the client
+ * `personName` on a due. That keeps table renderers synchronous: the client
  * never has to resolve a foreign key to draw a row.
  */
 
@@ -34,6 +34,10 @@ export const mapPerson = (row: Row) => ({
   city: str(row, 'city'),
   status: String(row.status),
   notes: str(row, 'notes'),
+  // Billing lives on the person: a member is charged once, whatever links they hold.
+  monthlyFeeEnabled: Boolean(row.monthly_fee_enabled),
+  monthlyFee: Number(row.monthly_fee ?? 0),
+  dueDay: Number(row.due_day ?? 10),
   roles: [
     row.is_player ? 'jogador' : null,
     row.is_board ? 'diretoria' : null,
@@ -55,8 +59,10 @@ export const mapPlayer = (row: Row) => ({
   birthDate: str(row, 'birth_date'),
   phone: str(row, 'phone'),
   joinedAt: str(row, 'joined_at') ?? '',
-  monthlyFee: Number(row.monthly_fee ?? 0),
-  dueDay: Number(row.due_day ?? 10),
+  // Aliased from `people` by PLAYER_SELECT — the squad row no longer owns these.
+  monthlyFee: Number(row.person_monthly_fee ?? 0),
+  dueDay: Number(row.person_due_day ?? 10),
+  monthlyFeeEnabled: Boolean(row.person_fee_enabled),
   status: String(row.status),
   notes: str(row, 'notes'),
 });
@@ -132,8 +138,16 @@ export const mapTraining = (row: Row) => ({
 
 export const mapDue = (row: Row) => ({
   ...base(row),
-  playerId: String(row.player_id),
-  playerName: str(row, 'player_name') ?? '—',
+  personId: String(row.person_id),
+  personName: str(row, 'person_name') ?? '—',
+  personNickname: str(row, 'person_nickname'),
+  // Links are shown beside the name so the charge reads as belonging to the
+  // person, not to whichever role happens to be listed first.
+  personRoles: [
+    row.is_player ? 'jogador' : null,
+    row.is_board ? 'diretoria' : null,
+    row.is_staff ? 'comissao' : null,
+  ].filter(Boolean) as string[],
   referenceMonth: String(row.reference_month),
   dueDate: String(row.due_date),
   expectedAmount: Number(row.expected_amount ?? 0),
