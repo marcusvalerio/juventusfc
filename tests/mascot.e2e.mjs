@@ -166,13 +166,51 @@ console.log('\n== home — desktop ==');
     await page.locator('[data-mascot="home"] img').evaluate((img) => img.naturalWidth > 0),
   );
 
-  const box = await mascot.boundingBox();
-  const heading = await page.getByRole('heading', { level: 1 }).boundingBox();
-  const cta = await page.getByRole('link', { name: /Acessar a plataforma/ }).boundingBox();
-  const nav = await page.getByRole('link', { name: /^Acessar$/ }).boundingBox();
-  check('mascote não cobre o título', !overlaps(box, heading));
-  check('mascote não cobre o CTA', !overlaps(box, cta));
-  check('mascote não cobre a navegação', !overlaps(box, nav));
+  // The figure now spans the right half of the page as a background layer, so
+  // comparing element boxes proves nothing: an element's box is wider than the
+  // glyphs it paints, and the mascot's box is wider than the art inside it
+  // (object-contain letterboxes it). What matters is where ink actually lands,
+  // so both sides are measured as painted rectangles.
+  const art = await page.evaluate(() => {
+    const img = document.querySelector('[data-mascot="home"] img');
+    const box = img.getBoundingClientRect();
+    const ratio = img.naturalWidth / img.naturalHeight;
+    let { width, height } = box;
+    if (width / height > ratio) width = height * ratio;
+    else height = width / ratio;
+    // object-contain with object-bottom: centred across, sitting on the base.
+    return { x: box.x + (box.width - width) / 2, y: box.y + (box.height - height), width, height };
+  });
+  const textRect = (selector) =>
+    page.evaluate((sel) => {
+      const range = document.createRange();
+      range.selectNodeContents(document.querySelector(sel));
+      const r = range.getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height };
+    }, selector);
+
+  check('mascote não cobre o título', !overlaps(art, await textRect('h1')));
+  check('mascote não cobre a chamada', !overlaps(art, await textRect('h1 + div p, section p')));
+  check(
+    'mascote não cobre o CTA',
+    !overlaps(art, await page.getByRole('link', { name: /Acessar a plataforma/ }).boundingBox()),
+  );
+
+  // The figure passes behind the header, as the reference composition does.
+  // What has to hold is the painting order, not separation.
+  const stacking = await page.evaluate(() => {
+    const z = (el) => Number(getComputedStyle(el).zIndex) || 0;
+    return {
+      mascot: z(document.querySelector('[data-slot="mascot-3d"]')),
+      header: z(document.querySelector('header')),
+      statement: z(document.querySelector('h1').closest('div')),
+    };
+  });
+  check(
+    'mascote pinta atrás do cabeçalho e do texto',
+    stacking.mascot < stacking.header && stacking.mascot < stacking.statement,
+    JSON.stringify(stacking),
+  );
 
   check(
     'palco não recebe ponteiro',

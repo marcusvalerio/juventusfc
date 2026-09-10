@@ -63,16 +63,10 @@ export function MascotStage({
       transition={{ duration: entrance.duration, delay: entrance.delay, ease: EASE }}
       className={cn('pointer-events-none relative isolate select-none', className)}
     >
-      {/* Light the figure is standing in. Warm, low, and deliberately not a glow. */}
-      <div className="absolute inset-0 -z-10" style={layer(-0.42)}>
-        <div
-          className="absolute left-1/2 top-[46%] h-[86%] w-[84%] -translate-x-1/2 -translate-y-1/2 rounded-full"
-          style={{
-            background:
-              'radial-gradient(circle at 50% 50%, rgba(201,162,39,0.14) 0%, rgba(201,162,39,0.045) 44%, rgba(8,9,11,0) 72%)',
-          }}
-        />
-      </div>
+      {/* No pool of light behind the figure: anything lighter than the page
+          reads as a halo around the silhouette, which is exactly the sticker
+          look this composition must not have. The figure carries its own
+          lighting; the page stays onyx right up to the edge of the fur. */}
 
       {/* Contact shadow: what keeps the figure standing on the page. */}
       <div className="absolute inset-x-[14%] bottom-[1%] -z-10 h-[7%]" style={layer(0.55)}>

@@ -14,7 +14,7 @@ export const MASCOT_ARTWORK = {
   webpSmall: '/mascot/juventus-mascot-sm.webp',
   png: '/mascot/juventus-mascot.png',
   width: 900,
-  height: 1350,
+  height: 1364,
 } as const;
 
 /**

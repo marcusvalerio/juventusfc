@@ -83,60 +83,67 @@ export default function HomePage() {
         </span>
       </motion.header>
 
-      {/* Hero. The statement leads on the left; the mascot answers from the
-          right on wide screens and sits above the copy on narrow ones, where
-          stacking it is the only way it never lands on top of the text. */}
+      {/* The mascot is a layer, not a column. On wide screens it stands in the
+          right half of the page — head near the top, feet running past the
+          fold, bleeding off the right edge — behind everything the visitor
+          reads. On narrow screens it returns to the flow above the statement,
+          where stacking it is the only way it never lands on the text. */}
+      <div
+        data-slot="mascot-3d"
+        className="relative z-0 mx-auto h-[clamp(260px,38vh,380px)] w-full max-w-[440px] px-6 sm:px-10 lg:absolute lg:right-0 lg:top-[2vh] lg:mx-0 lg:h-[112vh] lg:w-[56%] lg:max-w-none lg:px-0"
+      >
+        <Mascot3D variant="home" state="idle" intensity={1} priority />
+      </div>
+
+      {/* Onyx floor beneath the footer: the figure runs past the fold, and the
+          facts still read against the page instead of against fur. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] hidden h-44 bg-gradient-to-t from-onyx via-onyx/80 to-transparent lg:block"
+      />
+
+      {/* Statement */}
       <div className="relative z-10 flex flex-1 items-center px-6 pb-10 sm:px-10 sm:pb-14">
-        <div className="grid w-full items-center gap-y-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.92fr)] lg:gap-x-10">
-          <div
-            data-slot="mascot-3d"
-            className="order-1 mx-auto h-[clamp(210px,34vh,300px)] w-full max-w-[360px] sm:h-[clamp(300px,44vh,470px)] sm:max-w-[460px] lg:order-2 lg:-mr-6 lg:mx-0 lg:h-[min(70vh,680px)] lg:max-w-none xl:-mr-14"
+        <motion.section
+          initial="initial"
+          animate="animate"
+          variants={{ animate: { transition: { staggerChildren: 0.09, delayChildren: 0.35 } } }}
+          className="w-full lg:max-w-[48%]"
+        >
+          <motion.p
+            variants={{ initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0, transition: { duration: DUR.editorial, ease: EASE } } }}
+            className="eyebrow"
           >
-            <Mascot3D variant="home" state="idle" intensity={1} priority />
-          </div>
+            {[location, publicClub?.foundedYear && `desde ${publicClub.foundedYear}`]
+              .filter(Boolean)
+              .join(' · ') || 'Plataforma de gestão'}
+          </motion.p>
 
-          {/* Statement */}
-          <motion.section
-            initial="initial"
-            animate="animate"
-            variants={{ animate: { transition: { staggerChildren: 0.09, delayChildren: 0.35 } } }}
-            className="order-2 lg:order-1"
+          <motion.h1
+            variants={{ initial: { opacity: 0, y: 18 }, animate: { opacity: 1, y: 0, transition: { duration: 0.9, ease: EASE } } }}
+            className="mt-4 font-display text-[clamp(3rem,11vw,7.5rem)] font-medium leading-[0.88] tracking-tightest text-ink"
           >
-            <motion.p
-              variants={{ initial: { opacity: 0, y: 10 }, animate: { opacity: 1, y: 0, transition: { duration: DUR.editorial, ease: EASE } } }}
-              className="eyebrow"
-            >
-              {[location, publicClub?.foundedYear && `desde ${publicClub.foundedYear}`]
-                .filter(Boolean)
-                .join(' · ') || 'Plataforma de gestão'}
-            </motion.p>
+            Chega mais<span className="text-gold">.</span>
+          </motion.h1>
 
-            <motion.h1
-              variants={{ initial: { opacity: 0, y: 18 }, animate: { opacity: 1, y: 0, transition: { duration: 0.9, ease: EASE } } }}
-              className="mt-4 font-display text-[clamp(3rem,11vw,7.5rem)] font-medium leading-[0.88] tracking-tightest text-ink"
-            >
-              Chega mais<span className="text-gold">.</span>
-            </motion.h1>
+          <motion.div
+            variants={{ initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0, transition: { duration: DUR.editorial, ease: EASE } } }}
+            className="mt-7 flex flex-col items-start gap-7"
+          >
+            <p className="max-w-md text-[13px] leading-relaxed text-ink-muted sm:text-sm">
+              O clube inteiro em um só lugar: elenco, calendário, finanças e patrimônio.
+              Feito para quem cuida do Juventus todos os dias.
+            </p>
 
-            <motion.div
-              variants={{ initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0, transition: { duration: DUR.editorial, ease: EASE } } }}
-              className="mt-7 flex flex-wrap items-end justify-between gap-8"
+            <Link
+              to={entryHref}
+              className="group inline-flex items-center gap-2.5 rounded-md bg-ink px-5 py-3 text-sm font-medium text-onyx transition-colors duration-200 hover:bg-white"
             >
-              <p className="max-w-md text-[13px] leading-relaxed text-ink-muted sm:text-sm">
-                O clube inteiro em um só lugar: elenco, calendário, finanças e patrimônio.
-                Feito para quem cuida do Juventus todos os dias.
-              </p>
-
-              <Link
-                to={entryHref}
-                className="group inline-flex items-center gap-2.5 rounded-md bg-ink px-5 py-3 text-sm font-medium text-onyx transition-colors duration-200 hover:bg-white"
-              >
-                {entryLabel}
-                <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
-              </Link>
-            </motion.div>
-          </motion.section>
-        </div>
+              {entryLabel}
+              <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+            </Link>
+          </motion.div>
+        </motion.section>
       </div>
 
       {/* Footer facts */}
