@@ -9,23 +9,15 @@ import { useSession } from '@/app/SessionContext';
 /**
  * Institutional portal. Deliberately quiet: one statement, one way in, and the
  * club's mascot answering it from the right of the hero.
- *
- * The mascot is decoration. It is rendered after the copy, never overlaps a
- * control, and the page reads exactly the same with it switched off.
  */
 export default function HomePage() {
   const { publicClub, needsOnboarding, account } = useSession();
 
-  // On an unconfigured instance the portal has nothing to show and no way in,
-  // so the root sends the visitor straight to first access. Once the club
-  // exists the portal stays as it is — that case was never broken.
   if (needsOnboarding) return <Navigate to="/onboarding" replace />;
 
   const clubName = publicClub?.shortName ?? 'O clube';
-  const backdrop = (publicClub?.shortName ?? 'CLUBE').split(' ')[0].toUpperCase();
   const location = [publicClub?.city, publicClub?.state].filter(Boolean).join(', ');
 
-  // Only facts the club actually recorded are shown — nothing is invented here.
   const facts = [
     publicClub?.foundedYear ? { label: 'Fundação', value: publicClub.foundedYear } : null,
     location ? { label: 'Sede', value: location } : null,
@@ -37,22 +29,28 @@ export default function HomePage() {
 
   return (
     <div className="grain relative flex min-h-screen flex-col overflow-hidden bg-onyx">
-      {/* Editorial backdrop: the club's name at architectural scale. */}
+      {/* Cinematic club background. The asset is intentionally separate from
+          the interface: no copy, logo, controls or mascot are baked into it. */}
       <motion.div
         aria-hidden
-        initial={{ opacity: 0, scale: 1.04 }}
+        initial={{ opacity: 0, scale: 1.02 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 1.6, ease: EASE }}
-        className="pointer-events-none absolute inset-0 flex items-center justify-center"
-      >
-        <span className="whitespace-nowrap font-display text-[26vw] font-medium leading-none tracking-tightest text-ink opacity-[0.035] sm:text-[22vw]">
-          {backdrop}
-        </span>
-      </motion.div>
+        className="pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat"
+        style={{ backgroundImage: "url('/backgrounds/juventus-cinematic-bg.webp')" }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(8,9,11,0.88)_0%,rgba(8,9,11,0.52)_34%,rgba(8,9,11,0.12)_64%,rgba(8,9,11,0.32)_100%)]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(8,9,11,0.32)_0%,transparent_35%,rgba(8,9,11,0.72)_100%)]"
+      />
 
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold/30 to-transparent"
+        className="pointer-events-none absolute inset-x-0 top-0 z-[2] h-px bg-gradient-to-r from-transparent via-gold/30 to-transparent"
       />
 
       {/* Header */}
@@ -75,7 +73,7 @@ export default function HomePage() {
           </span>
           <Link
             to={entryHref}
-            className="group inline-flex items-center gap-2 rounded-md border border-line-strong px-3.5 py-2 text-[13px] text-ink-muted transition-colors duration-200 hover:border-line-gold hover:text-ink"
+            className="group inline-flex items-center gap-2 rounded-md border border-line-strong bg-onyx/20 px-3.5 py-2 text-[13px] text-ink-muted backdrop-blur-sm transition-colors duration-200 hover:border-line-gold hover:text-ink"
           >
             Acessar
             <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
@@ -83,23 +81,16 @@ export default function HomePage() {
         </span>
       </motion.header>
 
-      {/* The mascot is a layer, not a column. On wide screens it stands in the
-          right half of the page — head near the top, feet running past the
-          fold, bleeding off the right edge — behind everything the visitor
-          reads. On narrow screens it returns to the flow above the statement,
-          where stacking it is the only way it never lands on the text. */}
       <div
         data-slot="mascot-3d"
-        className="relative z-0 mx-auto h-[clamp(260px,38vh,380px)] w-full max-w-[440px] px-6 sm:px-10 lg:absolute lg:right-0 lg:top-[2vh] lg:mx-0 lg:h-[112vh] lg:w-[56%] lg:max-w-none lg:px-0"
+        className="relative z-[3] mx-auto h-[clamp(260px,38vh,380px)] w-full max-w-[440px] px-6 sm:px-10 lg:absolute lg:right-0 lg:top-[2vh] lg:mx-0 lg:h-[112vh] lg:w-[56%] lg:max-w-none lg:px-0"
       >
         <Mascot3D variant="home" state="idle" intensity={1} priority />
       </div>
 
-      {/* Onyx floor beneath the footer: the figure runs past the fold, and the
-          facts still read against the page instead of against fur. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-[1] hidden h-44 bg-gradient-to-t from-onyx via-onyx/80 to-transparent lg:block"
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-[4] hidden h-44 bg-gradient-to-t from-onyx/90 via-onyx/45 to-transparent lg:block"
       />
 
       {/* Statement */}
@@ -146,23 +137,22 @@ export default function HomePage() {
         </motion.section>
       </div>
 
-      {/* Footer facts */}
       {facts.length > 0 && (
-      <motion.footer
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: DUR.editorial, ease: EASE, delay: 0.8 }}
-        className="relative z-10 border-t border-line px-6 py-5 sm:px-10"
-      >
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
-          {facts.map((fact) => (
-            <div key={fact.label}>
-              <dt className="eyebrow">{fact.label}</dt>
-              <dd className="mt-1.5 truncate text-[13px] text-ink-muted">{fact.value}</dd>
-            </div>
-          ))}
-        </dl>
-      </motion.footer>
+        <motion.footer
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: DUR.editorial, ease: EASE, delay: 0.8 }}
+          className="relative z-10 border-t border-line px-6 py-5 sm:px-10"
+        >
+          <dl className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+            {facts.map((fact) => (
+              <div key={fact.label}>
+                <dt className="eyebrow">{fact.label}</dt>
+                <dd className="mt-1.5 truncate text-[13px] text-ink-muted">{fact.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </motion.footer>
       )}
     </div>
   );
