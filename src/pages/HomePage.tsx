@@ -37,7 +37,7 @@ export default function HomePage() {
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 1.6, ease: EASE }}
         className="pointer-events-none absolute inset-0 bg-cover bg-center bg-no-repeat"
-        style={{ backgroundImage: "url('/backgrounds/juventus-cinematic-bg.webp')" }}
+        style={{ backgroundImage: "url('/backgrounds/juventus-cinematic-bg.jpg')" }}
       />
       <div
         aria-hidden
