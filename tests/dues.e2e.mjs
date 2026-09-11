@@ -91,6 +91,9 @@ const pedro = await addPerson('Pedro Santos', { fee: 200 });
 const ana = await addPerson('Ana Ferraz', { fee: 90 });
 const maria = await addPerson('Maria Oliveira', { enabled: false });
 const bruno = await addPerson('Bruno Dias', { fee: 70 }); // sem vínculo esportivo
+// Billed on day 31 — the one who exposes short months in the form. Kept out of
+// the monthly generation so the counts asserted above stay untouched.
+const marcos = await addPerson('Marcos Vieira', { enabled: false, dueDay: 31 });
 
 await call('/api/squad/players', {
   method: 'POST', cookie: admin,
@@ -329,8 +332,35 @@ async function session(credentials, width = 1440, height = 900) {
     await dialog.getByLabel('Vencimento').inputValue(),
   );
 
-  await dialog.getByLabel('Mês de referência').fill('2026-10');
-  await dialog.getByLabel('Vencimento').fill('2026-10-10');
+  // ---- the due date follows the reference month ---------------------------
+  // Carlos is billed on day 10: changing the reference has to recalculate the
+  // suggested due date, and a hand-typed date has to survive the change.
+  const monthField = dialog.getByLabel('Mês de referência');
+  const dueField = dialog.getByLabel('Vencimento');
+  const retype = async (field, value) => {
+    await field.fill(value);
+    await page.waitForTimeout(350);
+  };
+
+  await retype(monthField, '2026-09');
+  check('CASO 1 — referência 09/2026 sugere 10/09/2026', (await dueField.inputValue()) === '2026-09-10', await dueField.inputValue());
+
+  await retype(monthField, '2026-10');
+  check('CASO 2 — referência 10/2026 sugere 10/10/2026', (await dueField.inputValue()) === '2026-10-10', await dueField.inputValue());
+
+  await retype(monthField, '2026-11');
+  check('CASO 3 — referência 11/2026 sugere 10/11/2026', (await dueField.inputValue()) === '2026-11-10', await dueField.inputValue());
+
+  await retype(dueField, '2026-11-25');
+  await retype(monthField, '2026-12');
+  check(
+    'CASO 4 — vencimento editado à mão não é sobrescrito',
+    (await dueField.inputValue()) === '2026-11-25',
+    await dueField.inputValue(),
+  );
+
+  await retype(monthField, '2026-10');
+  await retype(dueField, '2026-10-10');
   await page.screenshot({ path: `${SHOTS}/formulario.png` });
   await dialog.getByRole('button', { name: 'Salvar' }).click();
   await page.waitForTimeout(2200);
@@ -344,6 +374,47 @@ async function session(credentials, width = 1440, height = 900) {
     (await call('/api/people', { cookie: admin })).json.data.length === peopleBefore,
     String(peopleBefore),
   );
+  // ---- short months -------------------------------------------------------
+  // Marcos is billed on day 31. The suggestion falls back to the last day the
+  // month actually has, and never invents a date that does not exist.
+  await page.getByRole('button', { name: /Registrar mensalidade/i }).click();
+  await page.waitForTimeout(700);
+  const shortMonths = page.getByRole('dialog');
+  await shortMonths.getByPlaceholder('Pesquisar pessoa…').fill('Marcos');
+  await page.waitForTimeout(500);
+  await shortMonths.getByRole('listbox').getByRole('option', { name: /Marcos Vieira/ }).click();
+  await page.waitForTimeout(400);
+
+  const shortMonthField = shortMonths.getByLabel('Mês de referência');
+  const shortDueField = shortMonths.getByLabel('Vencimento');
+  const suggestedFor = async (reference) => {
+    await shortMonthField.fill(reference);
+    await page.waitForTimeout(350);
+    return shortDueField.inputValue();
+  };
+
+  check('CASO 5 — dia 31 em janeiro continua 31/01', (await suggestedFor('2027-01')) === '2027-01-31');
+  check('CASO 6 — dia 31 em fevereiro vira o último dia do mês', (await suggestedFor('2027-02')) === '2027-02-28');
+  check('CASO 6b — e 29/02 no ano bissexto', (await suggestedFor('2028-02')) === '2028-02-29');
+  check('CASO 7 — dia 31 em abril vira 30/04', (await suggestedFor('2027-04')) === '2027-04-30');
+  check('CASO 7b — dia 31 em junho vira 30/06', (await suggestedFor('2027-06')) === '2027-06-30');
+  // An `input[type=date]` rejects 31/02 and reports an empty string, so a
+  // suggestion outside the month either vanishes or lands on the next one.
+  const invalid = [];
+  for (const reference of ['2027-01', '2027-02', '2027-03', '2027-04', '2027-05', '2027-06', '2027-11']) {
+    const value = await suggestedFor(reference);
+    if (!value.startsWith(`${reference}-`) || Number.isNaN(Date.parse(value))) invalid.push(`${reference}→${value || '∅'}`);
+  }
+  check('nenhuma referência produz data inválida ou fora do mês', invalid.length === 0, invalid.join(', '));
+  await page.screenshot({ path: `${SHOTS}/meses-curtos.png` });
+  await shortMonths.getByRole('button', { name: 'Cancelar' }).click();
+  await page.waitForTimeout(500);
+
+  const marcosDues = (await call('/api/finance/dues', { cookie: admin })).json.data.filter(
+    (due) => due.personId === marcos.id,
+  );
+  check('conferir os meses curtos não lança cobrança', marcosDues.length === 0, String(marcosDues.length));
+
   check('a interface não gerou erro', errors.length === 0, errors.join(' | '));
   await context.close();
 }

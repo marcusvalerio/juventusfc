@@ -37,6 +37,19 @@ const emptyForm = {
   notes: '',
 };
 
+// The suggested due date is always the reference month plus the person's
+// billing day. Short months fall back to the last day that exists: day 31
+// becomes 28 in February (29 on a leap year) and 30 in April or June.
+// An empty string means "no suggestion" and the caller keeps what it has.
+const suggestDueDate = (referenceMonth: string, dueDay: number) => {
+  const [year, month] = referenceMonth.split('-').map(Number);
+  if (!year || !month || month < 1 || month > 12 || !dueDay) return '';
+  // Day 0 of the next month is the last day of this one.
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const day = Math.min(Math.max(Math.trunc(dueDay), 1), lastDay);
+  return `${referenceMonth}-${String(day).padStart(2, '0')}`;
+};
+
 export default function DuesPage() {
   const { data, status, reload } = useAsync(() => duesRepo.list(), []);
   // The charge belongs to a person, so this screen picks from the registry
@@ -47,6 +60,14 @@ export default function DuesPage() {
   const toast = useToast();
   const [values, setValues] = useState(emptyForm);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  // While the due date is on automatic it follows the reference month; once
+  // it is typed by hand that choice wins and is never overwritten.
+  const [dueDateTouched, setDueDateTouched] = useState(false);
+
+  const selectedDueDay = useMemo(
+    () => people.find((person) => person.id === values.personId)?.dueDay ?? 0,
+    [people, values.personId],
+  );
 
   const months = useMemo(() => {
     const refs = [...new Set((data ?? []).map((due) => due.referenceMonth))].sort().reverse();
@@ -147,7 +168,10 @@ export default function DuesPage() {
       setErrors,
       toast,
     );
-    if (ok) setValues(emptyForm);
+    if (ok) {
+      setValues(emptyForm);
+      setDueDateTouched(false);
+    }
     return ok;
   };
 
@@ -280,9 +304,10 @@ export default function DuesPage() {
                     // The person's settings are defaults for a new charge; an
                     // amount already typed is left alone.
                     expectedAmount: person.id ? String(person.monthlyFee || values.expectedAmount) : values.expectedAmount,
-                    dueDate: person.id && !values.dueDate
-                      ? `${values.referenceMonth}-${String(Math.min(person.dueDay, 28)).padStart(2, '0')}`
-                      : values.dueDate,
+                    dueDate:
+                      person.id && !dueDateTouched
+                        ? suggestDueDate(values.referenceMonth, person.dueDay) || values.dueDate
+                        : values.dueDate,
                   })
                 }
               />
@@ -294,13 +319,30 @@ export default function DuesPage() {
                 id={id}
                 type="month"
                 value={values.referenceMonth}
-                onChange={(e) => setValues({ ...values, referenceMonth: e.target.value })}
+                onChange={(e) =>
+                  setValues({
+                    ...values,
+                    referenceMonth: e.target.value,
+                    dueDate:
+                      values.personId && !dueDateTouched
+                        ? suggestDueDate(e.target.value, selectedDueDay) || values.dueDate
+                        : values.dueDate,
+                  })
+                }
               />
             )}
           </Field>
           <Field label="Vencimento" required error={errors.dueDate}>
             {({ id, invalid }) => (
-              <DatePicker id={id} invalid={invalid} value={values.dueDate} onChange={(e) => setValues({ ...values, dueDate: e.target.value })} />
+              <DatePicker
+                id={id}
+                invalid={invalid}
+                value={values.dueDate}
+                onChange={(e) => {
+                  setDueDateTouched(true);
+                  setValues({ ...values, dueDate: e.target.value });
+                }}
+              />
             )}
           </Field>
           <Field label="Valor previsto" required error={errors.expectedAmount}>
