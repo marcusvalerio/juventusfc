@@ -21,6 +21,7 @@ import { apiFetch, ApiError } from '@/services/api';
 import { currentMonthRef } from '@/services/analytics';
 import { formatDate, formatMonthRef } from '@/lib/dates';
 import { currency } from '@/lib/format';
+import { dueDateFor } from '@/shared/billing';
 import type { MonthlyDue, PaymentMethod, Person } from '@/types/domain';
 
 const STATUSES = ['pago', 'pendente', 'parcial', 'atrasado'];
@@ -35,19 +36,6 @@ const emptyForm = {
   paidAt: '',
   method: 'Pix',
   notes: '',
-};
-
-// The suggested due date is always the reference month plus the person's
-// billing day. Short months fall back to the last day that exists: day 31
-// becomes 28 in February (29 on a leap year) and 30 in April or June.
-// An empty string means "no suggestion" and the caller keeps what it has.
-const suggestDueDate = (referenceMonth: string, dueDay: number) => {
-  const [year, month] = referenceMonth.split('-').map(Number);
-  if (!year || !month || month < 1 || month > 12 || !dueDay) return '';
-  // Day 0 of the next month is the last day of this one.
-  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  const day = Math.min(Math.max(Math.trunc(dueDay), 1), lastDay);
-  return `${referenceMonth}-${String(day).padStart(2, '0')}`;
 };
 
 export default function DuesPage() {
@@ -305,8 +293,8 @@ export default function DuesPage() {
                     // amount already typed is left alone.
                     expectedAmount: person.id ? String(person.monthlyFee || values.expectedAmount) : values.expectedAmount,
                     dueDate:
-                      person.id && !dueDateTouched
-                        ? suggestDueDate(values.referenceMonth, person.dueDay) || values.dueDate
+                      person.id && person.dueDay && !dueDateTouched
+                        ? dueDateFor(values.referenceMonth, person.dueDay) || values.dueDate
                         : values.dueDate,
                   })
                 }
@@ -324,8 +312,8 @@ export default function DuesPage() {
                     ...values,
                     referenceMonth: e.target.value,
                     dueDate:
-                      values.personId && !dueDateTouched
-                        ? suggestDueDate(e.target.value, selectedDueDay) || values.dueDate
+                      values.personId && selectedDueDay && !dueDateTouched
+                        ? dueDateFor(e.target.value, selectedDueDay) || values.dueDate
                         : values.dueDate,
                   })
                 }

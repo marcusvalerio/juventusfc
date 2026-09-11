@@ -448,6 +448,89 @@ async function session(credentials, width = 1440, height = 900) {
 
 await browser.close();
 
+// ------------------------------------------ vencimento da geração automática
+
+// "Gerar mês" has to land on the same date the form suggests: the person's
+// billing day inside the reference month, pulled back to the last day that
+// month actually has. Everything here goes through the real route the button
+// calls, and asserts on the due date of the charge it actually wrote.
+console.log('\n== vencimento da geração automática ==');
+
+// Snapshot every charge that already exists: this fix must not touch them.
+const beforeFix = new Map(
+  (await call('/api/finance/dues', { cookie: admin })).json.data.map((due) => [due.id, due.dueDate]),
+);
+
+const laura = await addPerson('Laura Prado', { fee: 130, dueDay: 10 });
+const severino = await addPerson('Severino Alves', { fee: 100, dueDay: 31 });
+const teresa = await addPerson('Teresa Lima', { fee: 110, dueDay: 30 });
+const benedita = await addPerson('Benedita Rocha', { fee: 95, dueDay: 29 });
+
+const generateFor = (reference) =>
+  call('/api/finance/dues/generate', { method: 'POST', cookie: admin, body: { referenceMonth: reference } });
+
+const dueDateOf = async (personId, reference) =>
+  (await call('/api/finance/dues', { cookie: admin })).json.data.find(
+    (due) => due.personId === personId && due.referenceMonth === reference,
+  )?.dueDate ?? null;
+
+const generateAndRead = async (personId, reference) => {
+  await generateFor(reference);
+  return dueDateOf(personId, reference);
+};
+
+check('CASO 1 — dia 10, geração de 09/2026 vence em 10/09', (await generateAndRead(laura.id, '2026-09')) === '2026-09-10', await dueDateOf(laura.id, '2026-09'));
+check('CASO 2 — dia 10, geração de 10/2026 vence em 10/10', (await generateAndRead(laura.id, '2026-10')) === '2026-10-10', await dueDateOf(laura.id, '2026-10'));
+check('CASO 3 — dia 31, geração de 01/2027 vence em 31/01', (await generateAndRead(severino.id, '2027-01')) === '2027-01-31', await dueDateOf(severino.id, '2027-01'));
+check('CASO 4 — dia 31, geração de 02/2027 vence em 28/02', (await generateAndRead(severino.id, '2027-02')) === '2027-02-28', await dueDateOf(severino.id, '2027-02'));
+check('CASO 5 — dia 31, geração de 02/2028 vence em 29/02', (await generateAndRead(severino.id, '2028-02')) === '2028-02-29', await dueDateOf(severino.id, '2028-02'));
+check('CASO 6 — dia 31, geração de 04/2027 vence em 30/04', (await generateAndRead(severino.id, '2027-04')) === '2027-04-30', await dueDateOf(severino.id, '2027-04'));
+check('CASO 7 — dia 31, geração de 06/2027 vence em 30/06', (await generateAndRead(severino.id, '2027-06')) === '2027-06-30', await dueDateOf(severino.id, '2027-06'));
+// Teresa already entered the 02/2028 batch raised by CASO 5.
+check('CASO 8 — dia 30, geração de 02/2028 vence em 29/02', (await dueDateOf(teresa.id, '2028-02')) === '2028-02-29', await dueDateOf(teresa.id, '2028-02'));
+
+console.log('\n== dias 29, 30 e 31 em meses cheios ==');
+check('dia 29 cabe inteiro em janeiro', (await dueDateOf(benedita.id, '2027-01')) === '2027-01-29', await dueDateOf(benedita.id, '2027-01'));
+check('dia 29 recua em fevereiro comum', (await dueDateOf(benedita.id, '2027-02')) === '2027-02-28', await dueDateOf(benedita.id, '2027-02'));
+check('dia 29 cabe em fevereiro bissexto', (await dueDateOf(benedita.id, '2028-02')) === '2028-02-29', await dueDateOf(benedita.id, '2028-02'));
+check('dia 30 cabe inteiro em abril', (await dueDateOf(teresa.id, '2027-04')) === '2027-04-30', await dueDateOf(teresa.id, '2027-04'));
+check('dia 30 recua em fevereiro comum', (await dueDateOf(teresa.id, '2027-02')) === '2027-02-28', await dueDateOf(teresa.id, '2027-02'));
+
+// ---- controle negativo: o teto artificial de 28 não existe mais ------------
+console.log('\n== controle negativo ==');
+check('02/2028 no dia 31 não é mais 28/02', (await dueDateOf(severino.id, '2028-02')) !== '2028-02-28');
+check('CONTROLE — dia 31 em 03/2027 vence em 31/03, não 28/03', (await generateAndRead(severino.id, '2027-03')) === '2027-03-31', await dueDateOf(severino.id, '2027-03'));
+const clamped = (await call('/api/finance/dues', { cookie: admin })).json.data.filter(
+  (due) => [severino.id, teresa.id, benedita.id].includes(due.personId) && due.dueDate.endsWith('-28'),
+);
+check(
+  'nenhum vencimento dos dias 29/30/31 foi achatado em 28, exceto fevereiro comum',
+  clamped.every((due) => due.referenceMonth.endsWith('-02')),
+  clamped.map((due) => `${due.referenceMonth}→${due.dueDate}`).join(', '),
+);
+
+// ---- o que não pode ter mudado --------------------------------------------
+console.log('\n== o que a correção não pode ter mexido ==');
+const rerunCount = (reference) =>
+  call('/api/finance/dues', { cookie: admin }).then((r) => r.json.data.filter((d) => d.referenceMonth === reference).length);
+const before2027 = await rerunCount('2027-02');
+const rerun = await generateFor('2027-02');
+check('gerar o mesmo período de novo não cria nada', rerun.json?.created === 0, JSON.stringify(rerun.json));
+check('e a contagem do período não muda', (await rerunCount('2027-02')) === before2027, String(before2027));
+check(
+  'monthly_fee_enabled continua valendo',
+  (await dueDateOf(maria.id, '2027-02')) === null && (await dueDateOf(marcos.id, '2027-02')) === null,
+);
+
+const afterFix = new Map(
+  (await call('/api/finance/dues', { cookie: admin })).json.data.map((due) => [due.id, due.dueDate]),
+);
+const changed = [...beforeFix].filter(([id, dueDate]) => afterFix.get(id) !== dueDate);
+check('nenhuma mensalidade já existente teve o vencimento alterado', changed.length === 0, JSON.stringify(changed));
+check('nem foi apagada', [...beforeFix.keys()].every((id) => afterFix.has(id)));
+
+check('mês de referência impossível é recusado', (await generateFor('2026-13')).status === 400);
+
 console.log(`\n${passed} verificações passaram, ${failures.length} falharam.`);
 if (failures.length) {
   console.log(failures.map((f) => `  - ${f}`).join('\n'));

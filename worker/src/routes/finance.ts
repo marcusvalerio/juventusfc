@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
 import type { AppBindings } from '../lib/env';
-import { conflict, notFound } from '../lib/errors';
+import { badRequest, conflict, notFound } from '../lib/errors';
 import { newId, nowIso } from '../lib/id';
 import { mapDue, mapExpense, mapIncome } from '../lib/mappers';
 import { requirePermission } from '../lib/middleware';
 import { logActivity } from '../lib/activity';
+import { dueDateFor } from '../../../src/shared/billing';
 import {
   isoDate,
   monthRef,
@@ -138,7 +139,10 @@ finance.delete('/dues/:id', requirePermission('finance.delete'), async (c) => {
 finance.post('/dues/generate', requirePermission('finance.create'), async (c) => {
   const body = await parseBody(c.req.raw, z.object({ referenceMonth: monthRef }));
   const clubId = c.get('clubId');
-  const [year, month] = body.referenceMonth.split('-').map(Number);
+  // `monthRef` only checks the shape, so a month like 2026-13 would otherwise
+  // reach the insert as a date that does not exist.
+  const month = Number(body.referenceMonth.split('-')[1]);
+  if (month < 1 || month > 12) throw badRequest('Mês de referência inválido.');
 
   const payers = await c.env.DB.prepare(
     `SELECT p.id, p.monthly_fee, p.due_day FROM people p
@@ -150,8 +154,9 @@ finance.post('/dues/generate', requirePermission('finance.create'), async (c) =>
 
   const now = nowIso();
   const statements = payers.results.map((payer) => {
-    const day = Math.min(Math.max(payer.due_day, 1), 28);
-    const dueDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    // Same rule as the form: the person's billing day inside the reference
+    // month, pulled back to the last day that month actually has.
+    const dueDate = dueDateFor(body.referenceMonth, payer.due_day);
     return c.env.DB.prepare(
       `INSERT INTO monthly_dues (id, club_id, person_id, reference_month, due_date, expected_amount,
                                  paid_amount, status, created_at, updated_at)
